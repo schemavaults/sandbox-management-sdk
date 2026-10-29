@@ -1,0 +1,108 @@
+{
+  "name": "@schemavaults/sandbox-management-sdk",
+  "version": "0.1.0",
+  "description": "Universal sandbox management SDK: create, set up, start, stop, resume and list sandboxes across Docker and Vercel Sandbox.",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/schemavaults/sandbox-management-sdk.git"
+  },
+  "keywords": [
+    "sandbox",
+    "docker",
+    "vercel",
+    "vercel-sandbox",
+    "kysely"
+  ],
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./docker": {
+      "types": "./dist/docker/index.d.ts",
+      "import": "./dist/docker/index.js"
+    },
+    "./vercel": {
+      "types": "./dist/vercel/index.d.ts",
+      "import": "./dist/vercel/index.js"
+    },
+    "./dbh": {
+      "types": "./dist/dbh/index.d.ts",
+      "import": "./dist/dbh/index.js"
+    },
+    "./dbh/migration": {
+      "types": "./dist/dbh/migration.d.ts",
+      "import": "./dist/dbh/migration.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc --project tsconfig.build.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "bun run test:unit",
+    "test:unit": "bun test ./tests/unit",
+    "test:e2e:docker": "bun test ./tests/e2e/docker.test.ts",
+    "test:e2e:dbh": "bun test ./tests/e2e/dbh-store.test.ts",
+    "test:e2e:fixture-image": "docker build --tag sandbox-sdk-e2e:latest ./tests/e2e/fixture",
+    "test:smoke:node": "node ./tests/smoke/node-smoke.mjs",
+    "prepublishOnly": "bun run build"
+  },
+  "peerDependencies": {
+    "@schemavaults/dbh": ">=0.14.0",
+    "@vercel/sandbox": "^3.9.0",
+    "dockerode": "^4.0.0 || ^5.0.0",
+    "kysely": ">=0.28.0"
+  },
+  "peerDependenciesMeta": {
+    "@schemavaults/dbh": {
+      "optional": true
+    },
+    "@vercel/sandbox": {
+      "optional": true
+    },
+    "dockerode": {
+      "optional": true
+    },
+    "kysely": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@schemavaults/dbh": "0.14.0",
+    "@types/bun": "1.4.4",
+    "@types/dockerode": "4.0.2",
+    "@types/node": "24.19.2",
+    "@vercel/sandbox": "3.9.1",
+    "dockerode": "5.0.1",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "kysely": "0.29.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  }
+}

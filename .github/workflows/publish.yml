@@ -1,0 +1,52 @@
+name: Publish
+
+# Publishes to npm with trusted publishing (OIDC): no npm token is stored.
+# Configure the trusted publisher for this repository and workflow file on
+# npmjs.com (package settings -> Trusted publishing).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Update npm (trusted publishing needs npm >= 11.5.1)
+        run: npm install --global npm@latest
+
+      - name: Check whether this version is already published
+        id: check
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm; skipping publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing $name@$version."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.check.outputs.skip == 'false'
+        run: bun install --frozen-lockfile
+      - if: steps.check.outputs.skip == 'false'
+        run: bun run lint && bun run typecheck && bun run test:unit && bun run build
+      - if: steps.check.outputs.skip == 'false'
+        run: npm publish --provenance --access public
