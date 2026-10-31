@@ -1,5 +1,6 @@
 import { toShellCommandLine } from "./commands.js";
 import { SandboxError } from "./errors.js";
+import { decodeBase64 } from "./internal/base64.js";
 import type { MainLogChunk } from "./provider.js";
 import type { ExecResult, MainProcessInfo, NormalizedCommand } from "./types.js";
 
@@ -109,7 +110,6 @@ export async function shellReadMainLog(
   }
   const newline = result.stdout.indexOf("\n");
   const start = Number.parseInt(newline === -1 ? result.stdout : result.stdout.slice(0, newline), 10) || 0;
-  const encoded = newline === -1 ? "" : result.stdout.slice(newline + 1).replace(/\s+/g, "");
-  const data = new Uint8Array(Buffer.from(encoded, "base64"));
+  const data = newline === -1 ? new Uint8Array() : decodeBase64(result.stdout.slice(newline + 1));
   return { data, nextOffset: start + data.length };
 }

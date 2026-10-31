@@ -7,6 +7,7 @@ import * as migration from "@schemavaults/sandbox-management-sdk/dbh/migration";
 import { DockerSandboxProvider } from "@schemavaults/sandbox-management-sdk/docker";
 import { MockSandboxProvider } from "@schemavaults/sandbox-management-sdk/testing";
 import { VercelSandboxProvider } from "@schemavaults/sandbox-management-sdk/vercel";
+import { WebStorageSandboxStore } from "@schemavaults/sandbox-management-sdk/web-storage";
 
 const provider = new MockSandboxProvider();
 const manager = new SandboxManager({ providers: [provider], store: new InMemorySandboxStore() });
@@ -25,5 +26,21 @@ assert.equal(typeof (await import("@vercel/sandbox")).Sandbox.create, "function"
 assert.equal(typeof DbhSandboxStore, "function");
 assert.equal(migration.up, up);
 assert.equal(migration.down, down);
+
+// The Web Storage store takes any object with the Web Storage API.
+const entries = new Map();
+const storage = {
+  get length() {
+    return entries.size;
+  },
+  key: (index) => [...entries.keys()][index] ?? null,
+  getItem: (key) => entries.get(key) ?? null,
+  setItem: (key, value) => entries.set(key, String(value)),
+  removeItem: (key) => entries.delete(key),
+};
+const browserManager = new SandboxManager({ providers: [provider], store: new WebStorageSandboxStore({ storage }) });
+const stored = await browserManager.create({ spec: { start: "agent" } });
+assert.equal((await browserManager.stop(stored.id)).status, "stopped");
+assert.equal(entries.size, 1);
 
 console.log(`Node smoke test passed on ${process.version}`);
