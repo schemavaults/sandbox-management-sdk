@@ -1,7 +1,8 @@
 # Keeps files out of the published npm package.
 #
-# package.json "files" is the primary filter: it allowlists dist/, README.md
-# and LICENSE, and its "!" entries drop env files and keys even inside dist/.
+# package.json "files" is the primary filter: it allowlists dist/, src/,
+# README.md and LICENSE, and its "!" entries drop env files and keys even
+# inside dist/ and src/.
 # npm does not let a root .npmignore remove anything "files" includes, so keep
 # those "!" entries in sync with the secrets section below. This file takes
 # over if "files" is ever removed.
@@ -16,8 +17,8 @@
 *.key
 .npmrc
 
-# Source, tests and the website: the package ships the compiled dist/ only
-/src/
+# Tests and the website. src/ is published: the .js.map and .d.ts.map files in
+# dist/ point at ../src/*.ts, so debuggers and "Go to Definition" need it.
 /tests/
 /website/
 /coverage/
