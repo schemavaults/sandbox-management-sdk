@@ -1,0 +1,45 @@
+# Keeps files out of the published npm package.
+#
+# package.json "files" is the primary filter: it allowlists dist/, README.md
+# and LICENSE, and its "!" entries drop env files and keys even inside dist/.
+# npm does not let a root .npmignore remove anything "files" includes, so keep
+# those "!" entries in sync with the secrets section below. This file takes
+# over if "files" is ever removed.
+# When a .npmignore exists, npm no longer reads .gitignore, so anything that
+# must never ship has to be listed here.
+# Check the result with: npm pack --dry-run
+
+# Environment files and secrets, at any depth
+.env
+.env.*
+*.pem
+*.key
+.npmrc
+
+# Source, tests and the website: the package ships the compiled dist/ only
+/src/
+/tests/
+/website/
+/coverage/
+
+# Repository and tooling config
+/.github/
+/.claude/
+/.vscode/
+/.idea/
+/.gitignore
+/.gitattributes
+/tsconfig*.json
+/eslint.config.js
+/bun.lock
+/bun.lockb
+/bunfig.toml
+/CLAUDE.md
+/AGENTS.md
+
+# Build and OS leftovers
+node_modules/
+*.tgz
+*.tsbuildinfo
+*.log
+.DS_Store

@@ -23,7 +23,12 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "!**/.env",
+    "!**/.env.*",
+    "!**/*.pem",
+    "!**/*.key",
+    "!**/*.tsbuildinfo"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
