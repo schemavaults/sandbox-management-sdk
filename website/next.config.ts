@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
-// GitHub Pages serves a project site from /<repository>/. The Pages workflow
-// passes that prefix (from actions/configure-pages) as PAGES_BASE_PATH; it is
-// empty for local development and for a custom domain.
+// The site is deployed to the root of a custom domain, so the Pages workflow
+// builds it without a base path. Set PAGES_BASE_PATH (e.g. "/<repository>")
+// only to serve it from a GitHub Pages project URL instead.
 const basePath = (process.env.PAGES_BASE_PATH ?? "").replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
