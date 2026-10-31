@@ -5,22 +5,27 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { InlineCode } from "@/components/inline-code";
 import { cx } from "@/lib/cx";
 import { Button } from "@/lib/ui";
-import type { SandboxSceneController } from "./engine";
+import { createSandboxScene, type SandboxSceneController } from "./engine";
+import { SANDBOX_SCENE_FRAME, SandboxSceneSkeleton } from "./sandbox-scene-skeleton";
 
 const DESCRIPTION =
   "Illustration: a wooden toy sandbox with a river dug through the sand. A whale carries a stack of containers around the lagoon, " +
   "a rubber duck paddles down the river, a crab carries a container along the beach, and the sandcastle's keep is a little server rack. " +
   "Small sandbox crates with faces wake up, run, fall asleep and resume.";
 
+type Status = "loading" | "ready" | "failed";
+
 /**
- * A theme-aware Three.js diorama of a kid's sandbox. Three.js and the scene
- * load after hydration, so they stay out of the page's initial JavaScript.
+ * A theme-aware Three.js diorama of a kid's sandbox. This module imports
+ * Three.js, so render it through `LazySandboxScene`, which loads it with
+ * next/dynamic and shows the skeleton in the meantime. The skeleton stays on
+ * top here until the first frame is drawn, then fades out as the scene fades in.
  */
-export function SandboxScene({ className }: { className?: string }): ReactElement {
+export function SandboxScene(): ReactElement {
   const backdropRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SandboxSceneController | null>(null);
-  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState<Status>("loading");
   const [paused, setPaused] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
@@ -33,20 +38,20 @@ export function SandboxScene({ className }: { className?: string }): ReactElemen
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     setReducedMotion(motion.matches);
 
-    import("./engine")
-      .then(({ createSandboxScene }) => {
-        if (cancelled) return;
-        controllerRef.current = createSandboxScene({
-          stage,
-          backdrop: backdropRef.current ?? undefined,
-          dark: isDark(),
-          reducedMotion: motion.matches,
-          onReady: () => setReady(true),
-        });
-      })
-      .catch(() => {
-        // No WebGL (or the chunk failed to load): the sky backdrop stays on its own.
+    try {
+      controllerRef.current = createSandboxScene({
+        stage,
+        backdrop: backdropRef.current ?? undefined,
+        dark: isDark(),
+        reducedMotion: motion.matches,
+        onReady: () => {
+          if (!cancelled) setStatus("ready");
+        },
       });
+    } catch {
+      // No WebGL: the sky backdrop stays on its own.
+      setStatus("failed");
+    }
 
     const themeObserver = new MutationObserver(() => controllerRef.current?.setDark(isDark()));
     themeObserver.observe(root, { attributes: true, attributeFilter: ["class"] });
@@ -69,21 +74,23 @@ export function SandboxScene({ className }: { className?: string }): ReactElemen
     controllerRef.current?.setPaused(paused);
   }, [paused]);
 
+  const ready = status === "ready";
   const interactive = ready && !reducedMotion;
 
   return (
-    <div
-      ref={backdropRef}
-      className={cx(
-        "sandbox-sky relative isolate aspect-[4/3] w-full overflow-hidden rounded-2xl border border-border/70 shadow-sm sm:aspect-[2/1] lg:aspect-[16/7]",
-        className,
-      )}
-    >
+    <div ref={backdropRef} className={SANDBOX_SCENE_FRAME}>
       <div
         ref={stageRef}
         role="img"
         aria-label={DESCRIPTION}
         className={cx("absolute inset-0 transition-opacity duration-700", ready ? "opacity-100" : "opacity-0")}
+      />
+      {/* Once the scene is up, the skeleton fades out and its pulse stops where it is. */}
+      <SandboxSceneSkeleton
+        className={cx(
+          "transition-opacity duration-700",
+          status === "loading" ? "opacity-100" : "opacity-0 [&_*]:[animation-play-state:paused]",
+        )}
       />
       {interactive ? (
         <>
