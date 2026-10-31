@@ -3,7 +3,7 @@ import { ArrowRight, Container as ContainerIcon, Database, Github, Puzzle, Trian
 import type { ReactElement } from "react";
 import { Code } from "@/components/code";
 import { Container } from "@/components/container";
-import { SandboxScene } from "@/components/sandbox-scene/sandbox-scene";
+import { LazySandboxScene } from "@/components/sandbox-scene/lazy-sandbox-scene";
 import { heroSnippet } from "@/content/snippets";
 import type { SdkPackageInfo } from "@/lib/sdk-package";
 import { NPM_URL, PACKAGE_NAME, REPO_URL } from "@/lib/site";
@@ -81,7 +81,7 @@ export function Hero({ sdk }: { sdk: SdkPackageInfo }): ReactElement {
       </Container>
 
       <Container className="pb-8 sm:pb-10">
-        <SandboxScene />
+        <LazySandboxScene />
       </Container>
 
       <Container className="pb-16 sm:pb-20">

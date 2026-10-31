@@ -16,6 +16,7 @@ export {
 } from "@schemavaults/ui/components/ui/card/index.js";
 export { CodeBlock, type CodeBlockProps } from "@schemavaults/ui/components/ui/code-block/index.js";
 export { Separator } from "@schemavaults/ui/components/ui/separator/index.js";
+export { Skeleton } from "@schemavaults/ui/components/ui/skeleton/index.js";
 export { Snippet } from "@schemavaults/ui/components/ui/snippet/index.js";
 export {
   Table,
