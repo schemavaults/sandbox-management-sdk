@@ -31,7 +31,7 @@ export function SandboxSceneSkeleton({ className, ...props }: HTMLAttributes<HTM
         <Skeleton className={cx(SHAPE, "absolute inset-x-0 bottom-0 h-1/4 rounded-lg")} />
       </div>
       <Skeleton
-        className={cx(SHAPE, "absolute bottom-3 left-3 hidden h-7 w-[min(29rem,calc(100%-5rem))] rounded-full sm:motion-safe:block")}
+        className={cx(SHAPE, "absolute bottom-3 left-3 hidden h-7 w-[min(32rem,calc(100%-5rem))] rounded-full sm:motion-safe:block")}
       />
       <Skeleton className={cx(SHAPE, "absolute bottom-3 right-3 h-9 w-9 rounded-full motion-reduce:hidden")} />
     </div>

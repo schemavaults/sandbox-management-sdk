@@ -1,17 +1,17 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/lib/ui";
-import { Database, HardDrive, Wrench } from "lucide-react";
+import { Database, Globe, HardDrive, Wrench } from "lucide-react";
 import type { ReactElement } from "react";
 import { Code } from "@/components/code";
 import { InlineCode } from "@/components/inline-code";
 import { Section } from "@/components/section";
-import { dbhStoreSnippet, migrationSnippet } from "@/content/snippets";
+import { dbhStoreSnippet, migrationSnippet, webStorageSnippet } from "@/content/snippets";
 
 export function Stores(): ReactElement {
   return (
     <Section
       id="stores"
       eyebrow="Stores"
-      title="Sandbox state lives in your database"
+      title="Sandbox state lives where your app keeps state"
       description={
         <>
           Records go through a <InlineCode>SandboxStore</InlineCode>. Every status change is an atomic compare-and-set,
@@ -39,6 +39,22 @@ export function Stores(): ReactElement {
         </Card>
 
         <div className="grid min-w-0 gap-6 content-start">
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Globe aria-hidden className="h-5 w-5" />
+                Browser storage
+              </CardTitle>
+              <CardDescription className="leading-relaxed">
+                <InlineCode>WebStorageSandboxStore</InlineCode> keeps records in <InlineCode>localStorage</InlineCode>{" "}
+                or <InlineCode>sessionStorage</InlineCode>, one JSON entry per sandbox, for apps with no database. The
+                agent demo in the hero runs on it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Code code={webStorageSnippet} title="store.ts" />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">

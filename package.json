@@ -14,7 +14,8 @@
     "docker",
     "vercel",
     "vercel-sandbox",
-    "kysely"
+    "kysely",
+    "localstorage"
   ],
   "packageManager": "bun@1.4.4",
   "engines": {
@@ -53,6 +54,10 @@
     "./dbh/migration": {
       "types": "./dist/dbh/migration.d.ts",
       "import": "./dist/dbh/migration.js"
+    },
+    "./web-storage": {
+      "types": "./dist/web-storage/index.d.ts",
+      "import": "./dist/web-storage/index.js"
     },
     "./testing": {
       "types": "./dist/testing/index.d.ts",

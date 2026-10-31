@@ -3,8 +3,8 @@
 A TypeScript SDK for running sandboxes on any backend through one API. You can create, set up, start, stop, resume, list and destroy sandboxes on Docker or [Vercel Sandbox](https://vercel.com/docs/vercel-sandbox), and the sandbox state lives in your app's own database.
 
 - **One lifecycle everywhere.** `create` clones an optional git repo, runs `setup` once and launches `start` as the long-running main process. `stop` keeps the filesystem. Touching a stopped sandbox wakes it and runs `resume`.
-- **State in your database.** Records go through a `SandboxStore`. The SDK ships an in-memory store and a Kysely / [`@schemavaults/dbh`](https://github.com/schemavaults/dbh) Postgres store with a migration. Every status change is a compare-and-set, so many server processes can share sandboxes safely.
-- **Runtimes.** Runs on Node.js ≥ 24 and Bun, and the core, Vercel adapter and dbh store also run in serverless functions.
+- **State in your database.** Records go through a `SandboxStore`. The SDK ships an in-memory store, a Kysely / [`@schemavaults/dbh`](https://github.com/schemavaults/dbh) Postgres store with a migration, and a Web Storage store (`localStorage` / `sessionStorage`) for browsers. Every status change is a compare-and-set, so many server processes can share sandboxes safely.
+- **Runtimes.** Runs on Node.js ≥ 24 and Bun, and the core, Vercel adapter and dbh store also run in serverless functions. The core and the Web Storage store also run in browsers.
 
 ```
 bun add @schemavaults/sandbox-management-sdk
@@ -21,6 +21,7 @@ bun add @schemavaults/dbh      # Postgres store (or any Kysely instance)
 | `…/vercel` | `VercelSandboxProvider` |
 | `…/dbh` | `DbhSandboxStore`, `createSandboxesMigration`, `up` / `down` |
 | `…/dbh/migration` | `up` / `down` only, to re-export from a migrations directory |
+| `…/web-storage` | `WebStorageSandboxStore` (browser `localStorage` / `sessionStorage`) |
 | `…/testing` | `MockSandboxProvider`, `InMemorySandboxStore` |
 
 ## Quick start
@@ -174,6 +175,19 @@ export { up, down } from "@schemavaults/sandbox-management-sdk/dbh/migration";
 
 For a different table name, use `createSandboxesMigration("my_sandboxes")` and `new DbhSandboxStore({ db, tableName: "my_sandboxes" })`. The store takes a dbh handler or any Kysely instance using the Postgres dialect. It never opens or closes connections itself, so the `postgres-neon-proxy` adapter works unchanged.
 
+### Browser storage (`localStorage` / `sessionStorage`)
+
+For an app with no database, such as a demo or a local-first tool, keep records in the browser. The core has no Node.js dependencies, so `SandboxManager` runs in the page too:
+
+```ts
+import { WebStorageSandboxStore } from "@schemavaults/sandbox-management-sdk/web-storage";
+
+const store = new WebStorageSandboxStore();                          // localStorage
+const perTab = new WebStorageSandboxStore({ storage: sessionStorage, prefix: "my-app:sandboxes:" });
+```
+
+Each record is one JSON entry under `prefix + id` (default prefix `sandbox-sdk:sandboxes:`), with dates as ISO strings, so you can inspect it in the browser's dev tools. `update` reads and writes synchronously, which makes it an atomic compare-and-set within one page. Browsers do not guarantee that across tabs sharing `localStorage`, so give tabs that write the same records their own `prefix` or `ownerId`, or use `sessionStorage`. The store also accepts any object with the Web Storage API (`length`, `key`, `getItem`, `setItem`, `removeItem`). Storage quotas are around 5 MB per origin.
+
 ### Your own store
 
 Implement `SandboxStore` (`insert`, `get`, `list`, `update`, `delete`). `update` must be an atomic compare-and-set on `version`. Run the shared contract suite in `tests/contracts/store-contract.ts` against your store to check it.
@@ -212,9 +226,10 @@ CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, the unit tests and 
 
 ### Website
 
-The landing page in `website/` is a static Next.js export built with [`@schemavaults/ui`](https://github.com/schemavaults/ui), with its own `package.json` and lockfile:
+The landing page in `website/` is a static Next.js export built with [`@schemavaults/ui`](https://github.com/schemavaults/ui), with its own `package.json` and lockfile. Its hero runs an agent demo on the SDK's own build, so build the SDK first:
 
 ```bash
+bun install && bun run build                       # the SDK, into dist/
 cd website && bun install
 bun run dev                                        # http://localhost:3000
 bun run build                                      # static export in website/out

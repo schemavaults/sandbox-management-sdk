@@ -1,5 +1,6 @@
-import { posix } from "node:path";
 import { SandboxError } from "./errors.js";
+import { encodeBase64 } from "./internal/base64.js";
+import * as posix from "./internal/posix-path.js";
 import type { CommandInput, GitSource, NormalizedCommand, SandboxSpec } from "./types.js";
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -95,7 +96,7 @@ export function gitCloneCommand(git: GitSource, workdir: string): NormalizedComm
     SANDBOX_GIT_DEPTH: git.depth ? `--depth=${git.depth}` : "",
   };
   if (git.auth) {
-    const basic = Buffer.from(`${git.auth.username}:${git.auth.password}`).toString("base64");
+    const basic = encodeBase64(new TextEncoder().encode(`${git.auth.username}:${git.auth.password}`));
     env.GIT_CONFIG_COUNT = "1";
     env.GIT_CONFIG_KEY_0 = "http.extraHeader";
     env.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${basic}`;

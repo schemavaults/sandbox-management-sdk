@@ -17,7 +17,9 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@schemavaults/sandbox-management-sdk": ["../dist/index"],
+      "@schemavaults/sandbox-management-sdk/web-storage": ["../dist/web-storage/index"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],

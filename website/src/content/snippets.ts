@@ -158,6 +158,16 @@ const store = new DbhSandboxStore({ db: dbh });
 const { up, down } = createSandboxesMigration("my_sandboxes");
 const custom = new DbhSandboxStore({ db: dbh, tableName: "my_sandboxes" });`;
 
+export const webStorageSnippet = `import { WebStorageSandboxStore } from "@schemavaults/sandbox-management-sdk/web-storage";
+
+const store = new WebStorageSandboxStore(); // localStorage
+
+// one tab only, under your own key prefix:
+const perTab = new WebStorageSandboxStore({
+  storage: sessionStorage,
+  prefix: "my-app:sandboxes:",
+});`;
+
 export const testingSnippet = `import { SandboxManager } from "@schemavaults/sandbox-management-sdk";
 import {
   InMemorySandboxStore,
