@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { InlineCode } from "@/components/inline-code";
 import { cx } from "@/lib/cx";
 import { Button } from "@/lib/ui";
+import type { CrateLink } from "./crate-link";
 import { createSandboxScene, type SandboxSceneController } from "./engine";
 import { SANDBOX_SCENE_FRAME, SandboxSceneSkeleton } from "./sandbox-scene-skeleton";
 
@@ -21,7 +22,12 @@ type Status = "loading" | "ready" | "failed";
  * next/dynamic and shows the skeleton in the meantime. The skeleton stays on
  * top here until the first frame is drawn, then fades out as the scene fades in.
  */
-export function SandboxScene(): ReactElement {
+export interface SandboxSceneProps {
+  /** Links the crates the visitor creates to real sandboxes, e.g. the hero's agent demo. */
+  link?: CrateLink;
+}
+
+export function SandboxScene({ link }: SandboxSceneProps): ReactElement {
   const backdropRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SandboxSceneController | null>(null);
@@ -44,6 +50,7 @@ export function SandboxScene(): ReactElement {
         backdrop: backdropRef.current ?? undefined,
         dark: isDark(),
         reducedMotion: motion.matches,
+        link,
         onReady: () => {
           if (!cancelled) setStatus("ready");
         },
@@ -68,6 +75,7 @@ export function SandboxScene(): ReactElement {
       controllerRef.current?.dispose();
       controllerRef.current = null;
     };
+    // The scene is built once per mount; `link` is a module-level singleton.
   }, []);
 
   useEffect(() => {
@@ -96,8 +104,8 @@ export function SandboxScene(): ReactElement {
         <>
           <p className="pointer-events-none absolute bottom-3 left-3 right-16 hidden text-xs text-slate-700 sm:block dark:text-slate-300">
             <span className="rounded-full bg-background/70 px-3 py-1.5 backdrop-blur-sm">
-              Click the sand to <InlineCode>create()</InlineCode> a sandbox, or click one to <InlineCode>stop()</InlineCode> or{" "}
-              <InlineCode>resume()</InlineCode> it.
+              Click the sand to <InlineCode>create()</InlineCode> a sandbox with an agent, or click one to{" "}
+              <InlineCode>stop()</InlineCode> or <InlineCode>resume()</InlineCode> it.
             </span>
           </p>
           <Button

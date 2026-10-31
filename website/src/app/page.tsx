@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { LazyAgentSessionsFab } from "@/components/agent-demo/lazy-agent-sessions-fab";
 import { Features } from "@/components/sections/features";
 import { GetStarted } from "@/components/sections/get-started";
 import { Hero } from "@/components/sections/hero";
@@ -33,6 +34,7 @@ export default function HomePage(): ReactElement {
         <GetStarted />
       </main>
       <SiteFooter sdk={sdk} />
+      <LazyAgentSessionsFab />
     </>
   );
 }

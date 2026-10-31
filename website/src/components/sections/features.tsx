@@ -49,8 +49,9 @@ const FEATURES: Feature[] = [
     icon: Database,
     body: (
       <>
-        Records go through a <InlineCode>SandboxStore</InlineCode>. An in-memory store and a Kysely /{" "}
-        <InlineCode>@schemavaults/dbh</InlineCode> Postgres store with a migration ship in the box.
+        Records go through a <InlineCode>SandboxStore</InlineCode>. An in-memory store, a Kysely /{" "}
+        <InlineCode>@schemavaults/dbh</InlineCode> Postgres store with a migration, and a browser{" "}
+        <InlineCode>localStorage</InlineCode> store ship in the box.
       </>
     ),
   },
@@ -80,7 +81,7 @@ const FEATURES: Feature[] = [
     body: (
       <>
         Node.js 24+ and Bun. The core, the Vercel adapter and the dbh Postgres store also run in serverless
-        functions.
+        functions, and the core and the Web Storage store run in browsers.
       </>
     ),
   },

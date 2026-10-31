@@ -20,6 +20,7 @@ import {
   type Material,
   type Object3D,
 } from "three";
+import type { CrateLink } from "./crate-link";
 import { Crates } from "./crates";
 import { FloatingText, Particles, type Effects } from "./effects";
 import { Kit, damp } from "./helpers";
@@ -47,6 +48,8 @@ export interface SandboxSceneOptions {
   backdrop?: HTMLElement;
   dark: boolean;
   reducedMotion: boolean;
+  /** Links the crates you create to real sandboxes (see `crate-link.ts`). */
+  link?: CrateLink;
   onReady?: () => void;
 }
 
@@ -95,6 +98,8 @@ export function createSandboxScene(options: SandboxSceneOptions): SandboxSceneCo
   const palette = createPalette();
   const terrain = createTerrain();
   const crates = new Crates(kit);
+  crates.quiet = options.reducedMotion;
+  crates.setLink(options.link ?? null);
   crates.addAuto(-0.95, 3.05, "running", 2);
   crates.addAuto(0.05, 3.3, "stopped", 1);
   crates.addAuto(1.0, 3.0, "running", 5.5);
@@ -257,6 +262,8 @@ export function createSandboxScene(options: SandboxSceneOptions): SandboxSceneCo
   /** Draws one frame without advancing the animation (paused, reduced motion, resize). */
   const renderStill = (): void => {
     if (frame || disposed) return;
+    // With reduced motion nothing else moves the crates along, so jump them to where they are heading.
+    if (reducedMotion) crates.settle();
     step(0);
     renderer.render(scene, camera);
   };
@@ -326,6 +333,22 @@ export function createSandboxScene(options: SandboxSceneOptions): SandboxSceneCo
   });
   intersectionObserver.observe(stage);
 
+  const detachLink = options.link?.attach({
+    setTarget(crateId, target) {
+      crates.setTarget(crateId, target);
+      renderStill();
+    },
+    spawn() {
+      const crate = crates.spawnForLink(context);
+      renderStill();
+      return crate;
+    },
+    unlinkAll() {
+      crates.unlinkAll();
+      renderStill();
+    },
+  });
+
   resize();
   renderStill();
   sync();
@@ -343,11 +366,14 @@ export function createSandboxScene(options: SandboxSceneOptions): SandboxSceneCo
     },
     setReducedMotion(value) {
       reducedMotion = value;
+      crates.quiet = value;
       sync();
       renderStill();
     },
     dispose() {
       disposed = true;
+      detachLink?.();
+      crates.setLink(null);
       if (frame) cancelAnimationFrame(frame);
       frame = 0;
       resizeObserver.disconnect();

@@ -12,7 +12,10 @@ on:
   pull_request:
     paths:
       - "website/**"
+      - "src/**"
       - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -36,6 +39,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: website/package.json
+
+      # The hero's agent demo imports the SDK's build (website/tsconfig.json
+      # maps the package name to ../dist), so build the SDK first.
+      - name: Build the SDK
+        run: bun install --frozen-lockfile && bun run build
 
       - run: bun install --frozen-lockfile
         working-directory: website

@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import type { NextConfig } from "next";
 
 // The site is deployed to the root of a custom domain, so the Pages workflow
@@ -11,8 +12,10 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   images: { unoptimized: true },
   reactStrictMode: true,
-  // The SDK's own bun.lock sits one level up; pin the root to this app.
-  turbopack: { root: import.meta.dirname },
+  // The hero's agent demo imports the SDK's build in ../dist (see the
+  // tsconfig paths; run `bun run build` in the repository root first), so
+  // the root is the repository, which also holds the SDK's own bun.lock.
+  turbopack: { root: dirname(import.meta.dirname) },
 };
 
 export default nextConfig;
