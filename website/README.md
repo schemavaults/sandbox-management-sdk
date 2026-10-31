@@ -22,4 +22,4 @@ bun run preview    # serve ./out locally
 
 `.github/workflows/pages.yml` builds the site on pull requests that touch it and deploys it on every push to `main`. In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions** once.
 
-GitHub Pages serves a project site from `/<repository>/`, so the workflow passes that prefix as `PAGES_BASE_PATH` (it is empty for a custom domain). Leave it unset for local development and `bun run preview`.
+The site is served from the root of a custom domain (set under **Pages → Custom domain**), so the workflow builds it without a base path. Without a custom domain, GitHub Pages serves the site from `/<repository>/`, and the build needs `PAGES_BASE_PATH=/<repository>` or every script, stylesheet and font returns 404. Leave it unset for local development and `bun run preview`.

@@ -29,7 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: read
     env:
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
@@ -38,22 +37,17 @@ jobs:
         with:
           bun-version-file: website/package.json
 
-      - name: Configure GitHub Pages
-        id: pages
-        if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v6
-
       - run: bun install --frozen-lockfile
         working-directory: website
 
+      # The site is served from the root of a custom domain, so it is built
+      # without a base path (PAGES_BASE_PATH unset). Do not take the path from
+      # actions/configure-pages: it reports "/<repository>" whenever the custom
+      # domain is not set at build time, and the deployed pages then request
+      # every script, stylesheet and font from a path that does not exist.
       - name: Build static site
         run: bun run build
         working-directory: website
-        env:
-          # The path GitHub Pages serves the site from: "/<repository>" for a
-          # project site, "" for a custom domain. Pull requests have no Pages
-          # context, so they build with the project-site path.
-          PAGES_BASE_PATH: ${{ github.event_name == 'pull_request' && format('/{0}', github.event.repository.name) || steps.pages.outputs.base_path }}
 
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
