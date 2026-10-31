@@ -3,6 +3,7 @@ import { ArrowRight, Container as ContainerIcon, Database, Github, Puzzle, Trian
 import type { ReactElement } from "react";
 import { Code } from "@/components/code";
 import { Container } from "@/components/container";
+import { SandboxScene } from "@/components/sandbox-scene/sandbox-scene";
 import { heroSnippet } from "@/content/snippets";
 import type { SdkPackageInfo } from "@/lib/sdk-package";
 import { NPM_URL, PACKAGE_NAME, REPO_URL } from "@/lib/site";
@@ -77,6 +78,10 @@ export function Hero({ sdk }: { sdk: SdkPackageInfo }): ReactElement {
           <div aria-hidden className="hero-code-glow absolute -inset-6 -z-10 rounded-[2rem] blur-2xl" />
           <Code code={heroSnippet} title="app.ts" className="bg-card shadow-2xl shadow-black/5" />
         </div>
+      </Container>
+
+      <Container className="pb-8 sm:pb-10">
+        <SandboxScene />
       </Container>
 
       <Container className="pb-16 sm:pb-20">

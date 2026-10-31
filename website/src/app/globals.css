@@ -89,3 +89,26 @@
     radial-gradient(60% 80% at 100% 100%, color-mix(in oklab, var(--schemavaults-brand-red) 14%, transparent), transparent),
     hsl(var(--card));
 }
+
+/*
+ * Sky behind the sandbox scene. The night gradient fades in with --night,
+ * which the scene eases between 0 and 1 when the theme changes; before the
+ * scene loads it falls back to the theme class.
+ */
+.sandbox-sky {
+  --night: 0;
+  background: linear-gradient(180deg, #b9defc 0%, #dcefff 52%, #fff3df 100%);
+}
+
+.dark .sandbox-sky {
+  --night: 1;
+}
+
+.sandbox-sky::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, #040a22 0%, #0b1740 55%, #1d1b47 100%);
+  opacity: var(--night);
+}
