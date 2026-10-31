@@ -1,0 +1,114 @@
+/*
+ * Site styles on top of @schemavaults/theme/globals.css (imported first in
+ * layout.tsx, which also carries the Tailwind directives). Plain CSS only:
+ * no @layer/@apply here, so this file needs no Tailwind directives of its own.
+ */
+
+:root {
+  /* sugar-high token colors (light) */
+  --sh-class: #1f5fa8;
+  --sh-identifier: #1f2328;
+  --sh-sign: #57606a;
+  --sh-property: #0550ae;
+  --sh-entity: #116329;
+  --sh-jsxliterals: #6639ba;
+  --sh-string: #0a6b5d;
+  --sh-keyword: #cf222e;
+  --sh-comment: #57606a;
+
+  /* Hero heading gradient: a darker blue than the brand blue keeps it legible on white. */
+  --hero-gradient-from: #2563eb;
+  --hero-gradient-to: var(--schemavaults-brand-red);
+}
+
+.dark {
+  --sh-class: #79c0ff;
+  --sh-identifier: #e6edf3;
+  --sh-sign: #8b949e;
+  --sh-property: #79c0ff;
+  --sh-entity: #7ee787;
+  --sh-jsxliterals: #d2a8ff;
+  --sh-string: #a5d6ff;
+  --sh-keyword: #ff7b72;
+  --sh-comment: #8b949e;
+
+  --hero-gradient-from: var(--schemavaults-brand-blue);
+  --hero-gradient-to: #f87171;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Hero backdrop: a faded grid plus a soft brand-colored glow. */
+.hero-grid {
+  background-image:
+    linear-gradient(to right, hsl(var(--border) / 0.8) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--border) / 0.8) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 25%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 25%, transparent 75%);
+}
+
+.hero-glow {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--schemavaults-brand-blue) 45%, transparent),
+    color-mix(in oklab, var(--schemavaults-brand-blue) 10%, transparent) 50%,
+    color-mix(in oklab, var(--schemavaults-brand-red) 35%, transparent)
+  );
+  opacity: 0.55;
+}
+
+.dark .hero-glow {
+  opacity: 0.4;
+}
+
+.hero-code-glow {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--schemavaults-brand-blue) 40%, transparent),
+    color-mix(in oklab, var(--schemavaults-brand-red) 30%, transparent)
+  );
+  opacity: 0.45;
+}
+
+.feature-icon {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--schemavaults-brand-blue) 16%, hsl(var(--background))),
+    color-mix(in oklab, var(--schemavaults-brand-red) 12%, hsl(var(--background)))
+  );
+}
+
+.cta-panel {
+  background:
+    radial-gradient(60% 80% at 0% 0%, color-mix(in oklab, var(--schemavaults-brand-blue) 18%, transparent), transparent),
+    radial-gradient(60% 80% at 100% 100%, color-mix(in oklab, var(--schemavaults-brand-red) 14%, transparent), transparent),
+    hsl(var(--card));
+}
+
+/*
+ * Sky behind the sandbox scene. The night gradient fades in with --night,
+ * which the scene eases between 0 and 1 when the theme changes; before the
+ * scene loads it falls back to the theme class.
+ */
+.sandbox-sky {
+  --night: 0;
+  background: linear-gradient(180deg, #b9defc 0%, #dcefff 52%, #fff3df 100%);
+}
+
+.dark .sandbox-sky {
+  --night: 1;
+}
+
+.sandbox-sky::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, #040a22 0%, #0b1740 55%, #1d1b47 100%);
+  opacity: var(--night);
+}

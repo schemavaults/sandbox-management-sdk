@@ -1,0 +1,34 @@
+{
+  "name": "@schemavaults/sandbox-management-sdk-website",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Static landing page for @schemavaults/sandbox-management-sdk, deployed to GitHub Pages.",
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "preview": "bunx serve@14.2.5 out",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@schemavaults/theme": "0.30.0",
+    "@schemavaults/ui": "0.117.1",
+    "lucide-react": "0.575.0",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.186.0",
+    "autoprefixer": "10.6.1",
+    "postcss": "8.5.30",
+    "sugar-high": "2.6.0",
+    "tailwindcss": "3.4.19",
+    "typescript": "6.0.3"
+  }
+}

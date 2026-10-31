@@ -210,6 +210,18 @@ node ./tests/smoke/node-smoke.mjs                            # built package und
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, the unit tests and a Node 24 smoke test. It also runs the Docker e2e suite against the runner's Docker daemon, and the store suite against a Postgres service container. The Vercel adapter is tested against a fake `@vercel/sandbox` client, with no live API calls.
 
+### Website
+
+The landing page in `website/` is a static Next.js export built with [`@schemavaults/ui`](https://github.com/schemavaults/ui), with its own `package.json` and lockfile:
+
+```bash
+cd website && bun install
+bun run dev                                        # http://localhost:3000
+bun run build                                      # static export in website/out
+```
+
+`.github/workflows/pages.yml` builds it on pull requests that touch it and deploys it to GitHub Pages on every push to `main` (set **Settings → Pages → Source** to **GitHub Actions** once). Its code samples live in `website/src/content/snippets.ts`; keep them in step with this README. See [`website/README.md`](website/README.md) for details.
+
 ### Releasing
 
 Bump `version` in `package.json`, merge, and publish a GitHub release. `.github/workflows/publish.yml` publishes to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no token), and skips if that version is already on npm.
