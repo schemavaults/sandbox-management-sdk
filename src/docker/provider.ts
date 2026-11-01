@@ -75,7 +75,11 @@ export interface DockerSandboxProviderOptions {
    * according to `pullPolicy`.
    */
   egressProxyImage?: string;
-  /** How long to wait for an egress proxy to report healthy. Default 30 seconds. */
+  /**
+   * How long to wait for an egress proxy to report healthy. Default 60 seconds.
+   * Docker Engine 25+ reports it within a second; older engines ignore the
+   * image's `--start-interval` and take up to its 30-second interval.
+   */
   egressProxyStartTimeoutMs?: number;
 }
 
@@ -118,7 +122,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     this.urlHost = options.urlHost ?? "localhost";
     this.containerNamePrefix = options.containerNamePrefix ?? "sandbox-";
     this.egressProxyImage = options.egressProxyImage ?? DOCKER_EGRESS_PROXY_IMAGE;
-    this.egressProxyStartTimeoutMs = options.egressProxyStartTimeoutMs ?? 30_000;
+    this.egressProxyStartTimeoutMs = options.egressProxyStartTimeoutMs ?? 60_000;
   }
 
   async create(input: ProviderCreateInput): Promise<ProviderCreateResult> {
