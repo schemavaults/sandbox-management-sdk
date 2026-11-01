@@ -33,7 +33,7 @@ pnpm add @schemavaults/dbh      # Postgres store (or any Kysely instance)`,
 } as const;
 
 export const quickStartSnippet = `import { SandboxManager } from "@schemavaults/sandbox-management-sdk";
-import { DockerSandboxProvider } from "@schemavaults/sandbox-management-sdk/docker";
+import { DOCKER_EGRESS_PROXY_IMAGE, DockerSandboxProvider } from "@schemavaults/sandbox-management-sdk/docker";
 import { VercelSandboxProvider } from "@schemavaults/sandbox-management-sdk/vercel";
 import { DbhSandboxStore } from "@schemavaults/sandbox-management-sdk/dbh";
 import createDbh from "@schemavaults/dbh";
@@ -112,6 +112,7 @@ new DockerSandboxProvider({
   pullPolicy: "if-not-present",   // or "always" / "never"
   portBindingHost: "127.0.0.1",   // where published ports bind
   urlHost: "localhost",           // host used in getUrl() URLs
+  egressProxyImage: DOCKER_EGRESS_PROXY_IMAGE, // the default: enforces network allowlists
 });`;
 
 export const vercelSnippet = `import { VercelSandboxProvider } from "@schemavaults/sandbox-management-sdk/vercel";

@@ -44,10 +44,15 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build fixture image
         run: bun run test:e2e:fixture-image
+      - name: Build egress proxy image
+        run: bun run test:e2e:egress-proxy-image
       - run: bun run test:e2e:docker
-      - name: Remove leftover sandbox containers
+      - name: Remove leftover sandbox containers and networks
         if: always()
-        run: docker ps -aq --filter label=dev.schemavaults.sandbox.id | xargs -r docker rm -f
+        run: |
+          docker ps -aq --filter label=dev.schemavaults.sandbox.id | xargs -r docker rm -f
+          docker ps -aq --filter label=dev.schemavaults.sandbox.egress-proxy | xargs -r docker rm -f
+          docker network ls -q --filter label=dev.schemavaults.sandbox.egress-proxy | xargs -r docker network rm
 
   e2e-postgres:
     name: E2E (Postgres / dbh store)

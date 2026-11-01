@@ -1,16 +1,23 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import Docker from "dockerode";
 import { SandboxCommandError, SandboxManager } from "../../src/index.js";
 import type { SandboxSpec } from "../../src/index.js";
-import { DOCKER_SANDBOX_ID_LABEL, DockerSandboxProvider } from "../../src/docker/index.js";
+import { DOCKER_EGRESS_PROXY_LABEL, DOCKER_SANDBOX_ID_LABEL, DockerSandboxProvider } from "../../src/docker/index.js";
 import { InMemorySandboxStore } from "../../src/testing/index.js";
 
-// Requires a Docker daemon and the fixture image: `bun run test:e2e:fixture-image`.
+// Requires a Docker daemon, the fixture image and the egress proxy image:
+// `bun run test:e2e:fixture-image && bun run test:e2e:egress-proxy-image`.
 const IMAGE = process.env.SANDBOX_E2E_DOCKER_IMAGE ?? "sandbox-sdk-e2e:latest";
+const EGRESS_PROXY_IMAGE = process.env.SANDBOX_E2E_EGRESS_PROXY_IMAGE ?? "sandbox-egress-proxy:e2e";
 const TIMEOUT = 120_000;
 
 const docker = new Docker();
-const provider = new DockerSandboxProvider({ docker, defaultImage: IMAGE, pullPolicy: "never" });
+const provider = new DockerSandboxProvider({
+  docker,
+  defaultImage: IMAGE,
+  pullPolicy: "never",
+  egressProxyImage: EGRESS_PROXY_IMAGE,
+});
 
 /** A tiny HTTP server on :8080 using busybox nc; prints `banner` first. */
 const server = (banner: string) =>
@@ -53,12 +60,26 @@ async function containerFor(id: string) {
   return info;
 }
 
-afterAll(async () => {
-  for (const id of createdIds) {
+/** A sandbox's egress proxy container and internal network, if it has them. */
+async function egressFor(id: string) {
+  const filters = { label: [`${DOCKER_EGRESS_PROXY_LABEL}=${id}`] };
+  const [proxy] = await docker.listContainers({ all: true, filters });
+  const [network] = await docker.listNetworks({ filters });
+  return { proxy, network };
+}
+
+/** Removes whatever the tests' sandboxes left behind. */
+async function removeLeftovers() {
+  for (const id of createdIds.splice(0)) {
     const info = await containerFor(id);
     if (info) await docker.getContainer(info.Id).remove({ force: true });
+    const { proxy, network } = await egressFor(id);
+    if (proxy) await docker.getContainer(proxy.Id).remove({ force: true });
+    if (network) await docker.getNetwork(network.Id).remove();
   }
-});
+}
+
+afterAll(removeLeftovers);
 
 describe("DockerSandboxProvider e2e", () => {
   it(
@@ -225,14 +246,172 @@ describe("DockerSandboxProvider e2e", () => {
     TIMEOUT,
   );
 
+});
+
+/** An HTTP server on :8080 that answers every request with `body`. */
+const respond = (body: string) =>
+  `while true; do printf 'HTTP/1.0 200 OK\\r\\nContent-Length: ${body.length}\\r\\n\\r\\n${body}' | nc -l -p 8080; done`;
+
+describe("DockerSandboxProvider network allowlists e2e", () => {
+  // Stand-ins for the internet: containers on a network only the egress proxies join.
+  const OUTSIDE = `sandbox-e2e-outside-${process.pid}`;
+  const servers: Docker.Container[] = [];
+  const ip: Record<string, string> = {};
+
+  async function startServer(key: string, network: string, aliases: string[]) {
+    const container = await docker.createContainer({
+      Image: IMAGE,
+      Entrypoint: ["sh", "-c", respond(key)],
+      HostConfig: { NetworkMode: network },
+      NetworkingConfig: network === "bridge" ? undefined : { EndpointsConfig: { [network]: { Aliases: aliases } } },
+    });
+    servers.push(container);
+    await container.start();
+    ip[key] = (await container.inspect()).NetworkSettings.Networks[network]!.IPAddress;
+  }
+
+  beforeAll(async () => {
+    await docker.createNetwork({ Name: OUTSIDE, Driver: "bridge" });
+    await startServer("upstream", OUTSIDE, ["allowed.test", "a.wild.test"]);
+    await startServer("other", OUTSIDE, ["blocked.test", "wild.test"]);
+    await startServer("denied", OUTSIDE, ["denied.test"]);
+    await startServer("on-bridge", "bridge", []);
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await removeLeftovers();
+    for (const container of servers) await container.remove({ force: true });
+    await docker.getNetwork(OUTSIDE).remove();
+  });
+
+  /** Fetches `url` from inside the sandbox with busybox wget, which honors `http_proxy`. */
+  const fetchIn = (manager: SandboxManager, id: string, url: string) =>
+    manager.exec(id, `wget -q -T 5 -O - ${url}`);
+
   it(
-    "refuses a network allowlist without creating a container",
+    "lets a sandbox reach only its allowlist, through the egress proxy, across stop and resume",
     async () => {
       const manager = createManager();
-      await expect(manager.create({ spec: { network: { allowDomains: ["github.com"] } } })).rejects.toThrow(
-        "cannot enforce a network allowlist",
-      );
-      expect(await manager.list()).toHaveLength(0);
+      const record = await manager.create({
+        spec: {
+          // Runs through the proxy as soon as the sandbox exists, so the proxy must be ready by then.
+          setup: "wget -q -T 5 -O setup.txt http://allowed.test:8080/",
+          start: respond("from-sandbox"),
+          ports: [8080],
+          network: {
+            allowDomains: ["allowed.test", "*.wild.test", "denied.test"],
+            allowCidrs: [ip.upstream!],
+            denyCidrs: [ip.denied!],
+          },
+          providerOptions: { docker: { network: OUTSIDE } },
+        },
+      });
+      const { id, providerRef } = record;
+      createdIds.push(id);
+      expect(await manager.readTextFile(id, "setup.txt")).toBe("upstream");
+
+      // The sandbox sits alone on an internal network with its proxy, which publishes its ports.
+      const { proxy, network } = await egressFor(id);
+      expect(proxy?.State).toBe("running");
+      expect(network?.Internal).toBe(true);
+      const sandbox = await docker.getContainer(providerRef!).inspect();
+      expect(Object.keys(sandbox.NetworkSettings.Networks)).toEqual([network!.Name]);
+      expect(sandbox.Config.Env).toContain("HTTPS_PROXY=http://egress-proxy:3128");
+
+      // Allowed: names on the list (wildcards match subdomains) and addresses in allowCidrs.
+      expect((await fetchIn(manager, id, "http://allowed.test:8080/")).stdout).toBe("upstream");
+      expect((await fetchIn(manager, id, "http://a.wild.test:8080/")).stdout).toBe("upstream");
+      expect((await fetchIn(manager, id, `http://${ip.upstream}:8080/`)).stdout).toBe("upstream");
+      // Refused by the proxy: names off the list (that do not resolve into allowCidrs), the
+      // wildcard's apex, and allowed names that resolve into denyCidrs.
+      for (const url of ["http://blocked.test:8080/", "http://wild.test:8080/", "http://denied.test:8080/"]) {
+        const result = await fetchIn(manager, id, url);
+        expect({ url, exitCode: result.exitCode, stderr: result.stderr }).toMatchObject({ url, exitCode: 1 });
+        expect(result.stderr).toContain("403 Forbidden");
+      }
+
+      // CONNECT tunnels (what HTTPS uses) obey the same list.
+      const connect = (host: string) =>
+        manager.exec(
+          id,
+          `printf 'CONNECT ${host}:8080 HTTP/1.1\\r\\nHost: ${host}:8080\\r\\n\\r\\nGET / HTTP/1.0\\r\\n\\r\\n' | nc -w 5 egress-proxy 3128`,
+        );
+      const tunneled = (await connect("allowed.test")).stdout;
+      expect(tunneled).toStartWith("HTTP/1.1 200 Connection Established");
+      expect(tunneled).toEndWith("upstream");
+      expect((await connect("blocked.test")).stdout).toStartWith("HTTP/1.1 403 Forbidden");
+
+      // Nothing gets around the proxy: no route out, and no DNS for outside names.
+      const direct = await manager.exec(id, `unset http_proxy HTTP_PROXY; wget -q -T 3 -O - http://${ip.upstream}:8080/`);
+      expect(direct.exitCode).not.toBe(0);
+      expect((await manager.exec(id, "nslookup allowed.test")).exitCode).not.toBe(0);
+
+      // Published ports are reachable from the host through the proxy.
+      const url = await manager.getUrl(id, 8080);
+      expect(await eventually(() => fetchText(url), (body) => body === "from-sandbox")).toBe("from-sandbox");
+
+      // stop takes the proxy down too; resuming brings both back.
+      await manager.stop(id);
+      expect((await containerFor(id))?.State).toBe("exited");
+      expect((await egressFor(id)).proxy?.State).toBe("exited");
+      expect((await fetchIn(manager, id, "http://allowed.test:8080/")).stdout).toBe("upstream");
+      const resumedUrl = await manager.getUrl(id, 8080);
+      expect(await eventually(() => fetchText(resumedUrl), (body) => body === "from-sandbox")).toBe("from-sandbox");
+
+      // A proxy stopped behind the SDK's back counts as a stopped sandbox, and is restarted on access.
+      await docker.getContainer((await egressFor(id)).proxy!.Id).stop({ t: 1 });
+      expect((await manager.reconcile([id]))[0]?.status).toBe("stopped");
+      expect((await fetchIn(manager, id, "http://allowed.test:8080/")).stdout).toBe("upstream");
+
+      // destroy removes the proxy and the internal network along with the sandbox.
+      await manager.destroy(id);
+      expect(await containerFor(id)).toBeUndefined();
+      expect(await egressFor(id)).toEqual({ proxy: undefined, network: undefined });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "reaches the outside through Docker's default bridge when no network is given",
+    async () => {
+      const manager = createManager();
+      const { id } = await manager.create({ spec: { network: { allowCidrs: [ip["on-bridge"]!] } } });
+      createdIds.push(id);
+      expect((await egressFor(id)).proxy?.HostConfig.NetworkMode).toBe("bridge");
+      expect((await fetchIn(manager, id, `http://${ip["on-bridge"]}:8080/`)).stdout).toBe("on-bridge");
+      expect((await fetchIn(manager, id, "http://1.1.1.1/")).stderr).toContain("403 Forbidden");
+      await manager.destroy(id);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'publishes ports of a "deny-all" sandbox through a proxy that lets nothing out',
+    async () => {
+      const manager = createManager();
+      const { id } = await manager.create({ spec: { network: "deny-all", ports: [8080], start: respond("deny-all") } });
+      createdIds.push(id);
+      const url = await manager.getUrl(id, 8080);
+      expect(await eventually(() => fetchText(url), (body) => body === "deny-all")).toBe("deny-all");
+      expect((await fetchIn(manager, id, `http://${ip["on-bridge"]}:8080/`)).stderr).toContain("403 Forbidden");
+      await manager.destroy(id);
+      expect(await egressFor(id)).toEqual({ proxy: undefined, network: undefined });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "refuses an outside network the proxy cannot use, before creating anything",
+    async () => {
+      const manager = createManager();
+      const error = await manager
+        .create({ spec: { network: { allowDomains: ["allowed.test"] }, providerOptions: { docker: { network: "none" } } } })
+        .catch((e) => e);
+      expect(error.message).toContain('docker.network "none" cannot carry the egress proxy\'s traffic');
+      const [record] = await manager.list({ status: "failed" });
+      createdIds.push(record!.id);
+      expect(await containerFor(record!.id)).toBeUndefined();
+      expect(await egressFor(record!.id)).toEqual({ proxy: undefined, network: undefined });
     },
     TIMEOUT,
   );

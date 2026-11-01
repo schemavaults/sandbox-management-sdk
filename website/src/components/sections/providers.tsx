@@ -43,9 +43,10 @@ const PROVIDERS: ProviderTab[] = [
         <InlineCode>signal</InlineCode> is abandoned, the process inside the container keeps running.
       </>,
       <>
-        <InlineCode>network: &quot;deny-all&quot;</InlineCode> runs the container with{" "}
-        <InlineCode>--network none</InlineCode>, so it cannot publish <InlineCode>ports</InlineCode>. Docker cannot
-        enforce allowlists, so <InlineCode>create</InlineCode> refuses them.
+        A <InlineCode>network</InlineCode> allowlist puts the sandbox on an internal network with no route out. Its
+        only way out is an egress proxy container, <InlineCode>{"sandbox-<id>-egress"}</InlineCode>, which enforces
+        the allowlist for HTTP and HTTPS (via <InlineCode>HTTP(S)_PROXY</InlineCode>) and publishes the
+        sandbox&apos;s ports. Other protocols are blocked.
       </>,
     ],
   },

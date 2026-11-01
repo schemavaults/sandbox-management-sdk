@@ -140,8 +140,8 @@ export function Spec(): ReactElement {
           reach the platforms it works with. Everything not on the allowlist is blocked, and the policy applies from
           creation, so <InlineCode>git</InlineCode> and <InlineCode>setup</InlineCode> run under it too. A provider
           only gets sandboxes whose policy it can enforce; otherwise <InlineCode>create</InlineCode> throws before
-          anything is created, so a policy is never silently ignored. Vercel enforces allowlists natively; Docker
-          enforces <InlineCode>&quot;deny-all&quot;</InlineCode> only.
+          anything is created, so a policy is never silently ignored. Vercel enforces allowlists natively, and
+          Docker through an egress proxy container next to each sandbox.
         </p>
         <Code code={networkSnippet} title="network.ts" className="mt-5" />
       </div>

@@ -16,9 +16,10 @@
 *.key
 .npmrc
 
-# Source, tests and the website: the package ships the compiled dist/ only
+# Source, tests, images and the website: the package ships the compiled dist/ only
 /src/
 /tests/
+/images/
 /website/
 /coverage/
 

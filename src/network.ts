@@ -65,19 +65,46 @@ export function validateNetworkPolicy(policy: unknown): void {
 /** Adds the single-host prefix (`/32` or `/128`) to a bare IP address. Expects a valid value. */
 export function normalizeCidr(value: string): string {
   if (value.includes("/")) return value;
-  return `${value}/${parseCidr(value)?.version === 6 ? 128 : 32}`;
+  return `${value}/${parseIp(value)?.version === 6 ? 128 : 32}`;
+}
+
+/** An IPv4 or IPv6 address as a number (32 or 128 bits). */
+export interface IpAddress {
+  version: 4 | 6;
+  value: bigint;
+}
+
+/** An IP range; `network` holds the address's first `prefix` bits. */
+export interface CidrRange {
+  version: 4 | 6;
+  prefix: number;
+  network: bigint;
 }
 
 /** Parses an IPv4 / IPv6 address with an optional `/prefix`, or returns `null`. */
-export function parseCidr(value: string): { version: 4 | 6; prefix: number } | null {
+export function parseCidr(value: string): CidrRange | null {
   const [address = "", prefix, ...extra] = value.split("/");
   if (extra.length > 0) return null;
-  const version = isIPv4(address) ? 4 : isIPv6(address) ? 6 : null;
-  if (version === null) return null;
-  const maxPrefix = version === 4 ? 32 : 128;
-  if (prefix === undefined) return { version, prefix: maxPrefix };
-  if (!PREFIX.test(prefix) || Number(prefix) > maxPrefix) return null;
-  return { version, prefix: Number(prefix) };
+  const ip = parseIp(address);
+  if (ip === null) return null;
+  const bits = ip.version === 4 ? 32 : 128;
+  if (prefix !== undefined && !(PREFIX.test(prefix) && Number(prefix) <= bits)) return null;
+  const length = prefix === undefined ? bits : Number(prefix);
+  return { version: ip.version, prefix: length, network: ip.value >> BigInt(bits - length) };
+}
+
+/** Whether `range` contains `ip`. Addresses of the other IP version are never contained. */
+export function cidrContains(range: CidrRange, ip: IpAddress): boolean {
+  const bits = range.version === 4 ? 32 : 128;
+  return range.version === ip.version && ip.value >> BigInt(bits - range.prefix) === range.network;
+}
+
+/** Parses a plain IPv4 or IPv6 address (no zone ID), or returns `null`. */
+export function parseIp(address: string): IpAddress | null {
+  const v4 = parseIPv4(address);
+  if (v4 !== null) return { version: 4, value: v4 };
+  const v6 = parseIPv6(address);
+  return v6 === null ? null : { version: 6, value: v6 };
 }
 
 function stringList(allowlist: Record<string, unknown>, field: string): string[] {
@@ -89,26 +116,34 @@ function stringList(allowlist: Record<string, unknown>, field: string): string[]
   return value;
 }
 
-function isIPv4(address: string): boolean {
+function parseIPv4(address: string): bigint | null {
   const octets = address.split(".");
-  return octets.length === 4 && octets.every((octet) => IPV4_OCTET.test(octet) && Number(octet) <= 255);
+  if (octets.length !== 4 || !octets.every((octet) => IPV4_OCTET.test(octet) && Number(octet) <= 255)) return null;
+  return octets.reduce((value, octet) => (value << 8n) | BigInt(octet), 0n);
 }
 
-function isIPv6(address: string): boolean {
+function parseIPv6(address: string): bigint | null {
   let rest = address;
-  let groups = 8;
+  let embedded: bigint[] = [];
   const last = rest.slice(rest.lastIndexOf(":") + 1);
   if (last.includes(".")) {
     // An embedded IPv4 address, e.g. `::ffff:192.0.2.1`, stands for the last two groups.
-    if (!isIPv4(last) || last === rest) return false;
+    const v4 = parseIPv4(last);
+    if (v4 === null || last === rest) return null;
     rest = rest.slice(0, -last.length);
     if (!rest.endsWith("::")) rest = rest.slice(0, -1);
-    groups = 6;
+    embedded = [v4 >> 16n, v4 & 0xffffn];
   }
   const halves = rest.split("::");
-  if (halves.length > 2) return false;
-  const split = (part: string) => (part === "" ? [] : part.split(":"));
-  const parts = halves.flatMap(split);
-  if (!parts.every((group) => IPV6_GROUP.test(group))) return false;
-  return halves.length === 2 ? parts.length < groups : parts.length === groups;
+  if (halves.length > 2) return null;
+  const split = (part: string | undefined) => (part ? part.split(":") : []);
+  const head = split(halves[0]);
+  const tail = split(halves[1]);
+  if (![...head, ...tail].every((group) => IPV6_GROUP.test(group))) return null;
+  const groups = 8 - embedded.length;
+  const count = head.length + tail.length;
+  if (halves.length === 2 ? count >= groups : count !== groups) return null;
+  const zeros: bigint[] = Array.from({ length: groups - count }, () => 0n);
+  const values = [...head.map((group) => BigInt(`0x${group}`)), ...zeros, ...tail.map((group) => BigInt(`0x${group}`)), ...embedded];
+  return values.reduce((value, group) => (value << 16n) | group, 0n);
 }

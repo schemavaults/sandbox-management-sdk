@@ -112,13 +112,14 @@ await sandboxes.create({
 ```
 
 - Everything not on the allowlist is blocked. `"deny-all"` blocks everything, and `"allow-all"` (the default) blocks nothing.
+- A host name is allowed if it is on `allowDomains` or resolves to an address in `allowCidrs`. A leading `*.` matches subdomains only, so list `example.com` as well as `*.example.com` if you need both. An IP address is allowed if it is in `allowCidrs`. `denyCidrs` wins over both.
 - The policy applies from creation, so `git` and `setup` run under it too. Allow your git host and package registries, or those steps fail.
 - A provider only gets sandboxes whose policy it can enforce. Otherwise `create` throws before anything is created or stored, so a policy is never silently ignored.
 
 | Provider | `"deny-all"` | Allowlist |
 | --- | --- | --- |
 | Vercel | Yes | Yes, as the native network policy |
-| Docker | Yes, with `--network none` (so no `ports`) | No |
+| Docker | Yes: `--network none`, or behind an egress proxy when the sandbox has `ports` | Yes, behind an egress proxy (HTTP and HTTPS only, see [Docker](#docker)) |
 
 ### Lifecycle
 
@@ -167,6 +168,7 @@ new DockerSandboxProvider({
   pullPolicy: "if-not-present",   // or "always" / "never"
   portBindingHost: "127.0.0.1",   // where published ports bind
   urlHost: "localhost",           // host used in getUrl() URLs
+  egressProxyImage: DOCKER_EGRESS_PROXY_IMAGE, // the default: enforces spec.network allowlists
 });
 ```
 
@@ -174,7 +176,26 @@ new DockerSandboxProvider({
 - `stop` and `wake` map to `docker stop` and `docker start`, so the container filesystem persists. Published ports get random host ports again on every start, and `getUrl` looks them up.
 - Docker has no native timeout. Run `sandboxes.stopExpired()` from a cron job.
 - If a command passed to `exec` with `timeoutMs` or `signal` is abandoned, the process inside the container keeps running.
-- `spec.network: "deny-all"` runs the container with `--network none`, so it cannot publish `ports` or join `providerOptions.docker.network`. Docker cannot enforce allowlists, so `create` refuses them. To filter traffic yourself, attach the containers to an `--internal` network behind a proxy you run, with `providerOptions.docker.network`.
+- `spec.network: "deny-all"` without `ports` runs the container with `--network none`.
+
+#### Network allowlists
+
+A sandbox with a `spec.network` allowlist (or `"deny-all"` and `ports`) runs behind an egress proxy:
+
+```
+ sandbox-<id>  ──(internal network, no route out)──  sandbox-<id>-egress  ──►  allowed hosts
+                                                       ▲ published ports
+```
+
+- The sandbox container is attached only to an internal Docker network of its own (`sandbox-<id>-net`), so it has no route out and cannot resolve outside names.
+- Its only way out is the proxy container `sandbox-<id>-egress`, which joins that network and `providerOptions.docker.network` (default `"bridge"`). The proxy enforces the allowlist and forwards the sandbox's `ports`, which it publishes on the host in the sandbox's place. Both carry the label `dev.schemavaults.sandbox.egress-proxy=<id>`.
+- The sandbox gets `HTTP_PROXY`, `HTTPS_PROXY` (and lowercase), `NO_PROXY` and `NODE_USE_ENV_PROXY=1`, which curl, wget, git over HTTPS, npm, pip, Bun and Node.js honor. HTTPS is tunneled with `CONNECT`, so TLS stays end to end and needs no extra CA. Set any of these in `spec.env` to override them.
+- **Only HTTP and HTTPS get out.** Tools that ignore the proxy variables, git over SSH, other TCP protocols, UDP and DNS lookups all fail, because there is no route out.
+- The proxy only resolves names that could be allowed, so it cannot be used to leak data through DNS lookups. It refuses clients outside the sandbox's network and never connects to its own loopback.
+- HTTPS is checked by the host name in the `CONNECT` request, not inside the encrypted tunnel. A client could still reach another site served from the same address as an allowed host (domain fronting), where that host's CDN permits it.
+- `stop` and `wake` stop and start the proxy with the sandbox, and `destroy` removes the proxy and the network. `status` and `reconcile` report the sandbox as stopped if its proxy is not running, and the next access restarts it. `docker logs sandbox-<id>-egress` shows every allowed and refused connection.
+- The proxy image is `DOCKER_EGRESS_PROXY_IMAGE` (`ghcr.io/schemavaults/sandbox-egress-proxy:<sdk version>`), built from [`images/egress-proxy`](images/egress-proxy/Dockerfile) and published with each release. To use your own build, run `docker build -f images/egress-proxy/Dockerfile -t my-proxy .` and pass `egressProxyImage: "my-proxy"`. The provider waits for the image's `HEALTHCHECK` before starting the sandbox.
+- Each allowlisted sandbox uses one Docker network, stopped or running. Docker's default address pools hold about 30 networks; raise `default-address-pools` in `daemon.json` (for example `{ "base": "10.200.0.0/16", "size": 24 }`) to run more.
 
 ### Vercel Sandbox
 
@@ -250,12 +271,12 @@ bun install
 bun run lint && bun run typecheck && bun run build
 bun run test:unit                                  # no external services needed
 
-bun run test:e2e:fixture-image && bun run test:e2e:docker    # needs a Docker daemon
+bun run test:e2e:fixture-image && bun run test:e2e:egress-proxy-image && bun run test:e2e:docker    # needs a Docker daemon
 bun run test:e2e:dbh                                         # needs Postgres (POSTGRES_* env vars)
 node ./tests/smoke/node-smoke.mjs                            # built package under Node (after build)
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, the unit tests and a Node 24 smoke test. It also runs the Docker e2e suite against the runner's Docker daemon, and the store suite against a Postgres service container. The Vercel adapter is tested against a fake `@vercel/sandbox` client, with no live API calls.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, the unit tests and a Node 24 smoke test. It also builds the egress proxy image and runs the Docker e2e suite against the runner's Docker daemon, including allowlists enforced end to end, and the store suite against a Postgres service container. The Vercel adapter is tested against a fake `@vercel/sandbox` client, with no live API calls.
 
 ### Website
 
@@ -272,4 +293,4 @@ bun run build                                      # static export in website/ou
 
 ### Releasing
 
-Bump `version` in `package.json`, merge, and publish a GitHub release. `.github/workflows/publish.yml` publishes to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no token), and skips if that version is already on npm.
+Bump `version` in `package.json` and the tag in `DOCKER_EGRESS_PROXY_IMAGE` (`src/docker/egress.ts`; a unit test checks they match), merge, and publish a GitHub release. `.github/workflows/publish.yml` pushes the egress proxy image to `ghcr.io/<owner>/sandbox-egress-proxy:<version>` for amd64 and arm64, then publishes to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no token). It skips either step if that version is already published. The first time, make the GHCR package public (**Package settings → Change visibility**) so Docker hosts can pull it.
