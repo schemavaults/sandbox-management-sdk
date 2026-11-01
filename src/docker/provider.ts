@@ -14,6 +14,17 @@ import type {
 } from "../provider.js";
 import { shellGetMainProcess, shellReadMainLog, shellStartMainProcess } from "../shell-main-process.js";
 import type { ExecOptions, ExecResult, MainProcessInfo, NormalizedCommand } from "../types.js";
+import {
+  DOCKER_EGRESS_PROXY_IMAGE,
+  DOCKER_EGRESS_PROXY_LABEL,
+  EGRESS_PROXY_ALIAS,
+  SANDBOX_ALIAS,
+  dockerNetworkPlan,
+  egressProxyConfig,
+  egressProxyEnv,
+  usesEgressProxy,
+} from "./egress.js";
+import { EGRESS_PROXY_CONFIG_ENV } from "./egress-proxy/config.js";
 import { createTar, extractFirstFile } from "./tar.js";
 
 export type DockerPullPolicy = "if-not-present" | "always" | "never";
@@ -24,7 +35,11 @@ export interface DockerSandboxOptions {
   image?: string;
   /** User commands run as (container `User`). */
   user?: string;
-  /** Docker network to attach the container to. */
+  /**
+   * Docker network to attach the container to. With a `spec.network`
+   * allowlist, this is the network the egress proxy reaches the outside
+   * through instead (default `"bridge"`). Leave it unset for `"deny-all"`.
+   */
   network?: string;
   pullPolicy?: DockerPullPolicy;
   /** Extra container labels. */
@@ -54,6 +69,18 @@ export interface DockerSandboxProviderOptions {
   urlHost?: string;
   /** Container name prefix. Default `"sandbox-"`. */
   containerNamePrefix?: string;
+  /**
+   * Image of the egress proxy that enforces `spec.network` allowlists. Default
+   * `DOCKER_EGRESS_PROXY_IMAGE`, published for each SDK release. Pulled
+   * according to `pullPolicy`.
+   */
+  egressProxyImage?: string;
+  /**
+   * How long to wait for an egress proxy to report healthy. Default 60 seconds.
+   * Docker Engine 25+ reports it within a second; older engines ignore the
+   * image's `--start-interval` and take up to its 30-second interval.
+   */
+  egressProxyStartTimeoutMs?: number;
 }
 
 export const DOCKER_SANDBOX_ID_LABEL = "dev.schemavaults.sandbox.id";
@@ -65,16 +92,25 @@ const KEEPALIVE_SCRIPT = "trap 'exit 0' TERM INT; while :; do sleep 3600 & wait 
  * Runs each sandbox as a long-lived container. `stop` / `wake` map to
  * `docker stop` / `docker start`, which keep the container filesystem.
  * Docker has no native timeout: run `SandboxManager.stopExpired()` periodically.
+ *
+ * A sandbox with a `spec.network` allowlist (or `"deny-all"` and `ports`) gets
+ * an internal network of its own, with no route out, and an egress proxy
+ * container (`<name>-egress`) that is its only way to the outside: it enforces
+ * the allowlist for HTTP(S) and forwards the published ports.
  */
 export class DockerSandboxProvider implements SandboxProvider {
   readonly name: string;
   readonly defaultWorkdir: string;
+  /** `"deny-all"` without ports is `--network none`; the rest runs behind an egress proxy. */
+  readonly networkPolicies = ["deny-all", "allowlist"] as const;
   private readonly docker: Docker;
   private readonly defaultImage: string | undefined;
   private readonly pullPolicy: DockerPullPolicy;
   private readonly portBindingHost: string;
   private readonly urlHost: string;
   private readonly containerNamePrefix: string;
+  private readonly egressProxyImage: string;
+  private readonly egressProxyStartTimeoutMs: number;
 
   constructor(options: DockerSandboxProviderOptions = {}) {
     this.docker = options.docker ?? new Docker();
@@ -85,6 +121,8 @@ export class DockerSandboxProvider implements SandboxProvider {
     this.portBindingHost = options.portBindingHost ?? "127.0.0.1";
     this.urlHost = options.urlHost ?? "localhost";
     this.containerNamePrefix = options.containerNamePrefix ?? "sandbox-";
+    this.egressProxyImage = options.egressProxyImage ?? DOCKER_EGRESS_PROXY_IMAGE;
+    this.egressProxyStartTimeoutMs = options.egressProxyStartTimeoutMs ?? 60_000;
   }
 
   async create(input: ProviderCreateInput): Promise<ProviderCreateResult> {
@@ -93,41 +131,97 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (!image) {
       throw new SandboxError("No Docker image: set spec.providerOptions.docker.image or defaultImage");
     }
+    const plan = dockerNetworkPlan(this, input.spec, options.network);
     await this.ensureImage(image, options.pullPolicy ?? this.pullPolicy);
+    if (plan.mode === "proxy") await this.ensureImage(this.egressProxyImage, this.pullPolicy);
 
+    const name = `${this.containerNamePrefix}${input.id}`;
     const ports = (input.spec.ports ?? []).map((port) => `${port}/tcp`);
+    const exposedPorts = Object.fromEntries(ports.map((port) => [port, {}]));
+    const portBindings = Object.fromEntries(ports.map((port) => [port, [{ HostIp: this.portBindingHost, HostPort: "" }]]));
     const { vcpus, memoryMb } = input.spec.resources ?? {};
-    const container = await this.docker.createContainer({
-      name: `${this.containerNamePrefix}${input.id}`,
-      Image: image,
-      Entrypoint: ["/bin/sh", "-c", KEEPALIVE_SCRIPT],
-      Cmd: [],
-      WorkingDir: input.workdir,
-      Env: Object.entries(input.spec.env ?? {}).map(([key, value]) => `${key}=${value}`),
-      User: options.user,
-      Labels: { ...options.labels, [DOCKER_SANDBOX_ID_LABEL]: input.id },
-      ExposedPorts: Object.fromEntries(ports.map((port) => [port, {}])),
-      HostConfig: {
-        Init: true,
-        PortBindings: Object.fromEntries(
-          ports.map((port) => [port, [{ HostIp: this.portBindingHost, HostPort: "" }]]),
-        ),
-        Memory: memoryMb ? memoryMb * 1024 * 1024 : undefined,
-        NanoCpus: vcpus ? Math.round(vcpus * 1e9) : undefined,
-        NetworkMode: options.network,
-      },
-    });
+    const undo: (() => Promise<unknown>)[] = [];
     try {
+      let env = input.spec.env ?? {};
+      let proxy: Container | undefined;
+      let internalNetwork: string | undefined;
+      if (plan.mode === "proxy") {
+        internalNetwork = `${name}-net`;
+        const network = await this.docker.createNetwork({
+          Name: internalNetwork,
+          Driver: "bridge",
+          Internal: true,
+          Labels: { [DOCKER_EGRESS_PROXY_LABEL]: input.id },
+        });
+        undo.push(() => network.remove());
+        const subnets = ((await network.inspect()) as Docker.NetworkInspectInfo).IPAM?.Config?.flatMap((config) =>
+          config.Subnet ? [config.Subnet] : [],
+        );
+        const config = egressProxyConfig(plan, input.spec, subnets ?? []);
+        const egressProxy = await this.docker.createContainer({
+          name: `${name}-egress`,
+          Image: this.egressProxyImage,
+          Env: [`${EGRESS_PROXY_CONFIG_ENV}=${JSON.stringify(config)}`],
+          Labels: { ...options.labels, [DOCKER_EGRESS_PROXY_LABEL]: input.id },
+          ExposedPorts: exposedPorts,
+          HostConfig: {
+            Init: true,
+            NetworkMode: plan.outsideNetwork,
+            PortBindings: portBindings,
+            ReadonlyRootfs: true,
+            CapDrop: ["ALL"],
+            SecurityOpt: ["no-new-privileges"],
+            RestartPolicy: { Name: "on-failure" },
+          },
+        });
+        proxy = egressProxy;
+        undo.push(() => egressProxy.remove({ force: true }));
+        await network.connect({ Container: egressProxy.id, EndpointConfig: { Aliases: [EGRESS_PROXY_ALIAS] } });
+        env = { ...egressProxyEnv(plan.proxyPort), ...env };
+      }
+
+      const container = await this.docker.createContainer({
+        name,
+        Image: image,
+        Entrypoint: ["/bin/sh", "-c", KEEPALIVE_SCRIPT],
+        Cmd: [],
+        WorkingDir: input.workdir,
+        Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),
+        User: options.user,
+        Labels: { ...options.labels, [DOCKER_SANDBOX_ID_LABEL]: input.id },
+        ExposedPorts: exposedPorts,
+        HostConfig: {
+          Init: true,
+          // Behind a proxy, the proxy publishes the ports: Docker publishes none from internal networks.
+          PortBindings: proxy ? {} : portBindings,
+          Memory: memoryMb ? memoryMb * 1024 * 1024 : undefined,
+          NanoCpus: vcpus ? Math.round(vcpus * 1e9) : undefined,
+          NetworkMode: internalNetwork ?? (plan.mode === "direct" ? plan.networkMode : undefined),
+        },
+        NetworkingConfig: internalNetwork
+          ? { EndpointsConfig: { [internalNetwork]: { Aliases: [SANDBOX_ALIAS] } } }
+          : undefined,
+      });
+      undo.push(() => container.remove({ force: true }));
+      if (proxy) {
+        await proxy.start();
+        await this.waitForEgressProxy(proxy);
+      }
       await container.start();
+      return { providerRef: container.id };
     } catch (error) {
-      await container.remove({ force: true }).catch(() => undefined);
+      for (const step of undo.reverse()) await step().catch(() => undefined);
       throw error;
     }
-    return { providerRef: container.id };
   }
 
   async wake(sandbox: ProviderSandbox): Promise<void> {
     const info = await this.inspect(sandbox);
+    if (usesEgressProxy(sandbox.spec)) {
+      const proxy = await this.requireEgressProxy(sandbox);
+      if (!(await proxy.inspect()).State.Running) await proxy.start();
+      await this.waitForEgressProxy(proxy);
+    }
     if (!info.State.Running) {
       await this.container(sandbox).start();
     }
@@ -135,26 +229,33 @@ export class DockerSandboxProvider implements SandboxProvider {
 
   async stop(sandbox: ProviderSandbox): Promise<void> {
     const info = await this.inspect(sandbox);
-    if (!info.State.Running) return;
-    try {
-      await this.container(sandbox).stop({ t: 10 });
-    } catch (error) {
-      if (statusCode(error) !== 304) throw error; // 304: already stopped
+    if (info.State.Running) await stopContainer(this.container(sandbox));
+    if (usesEgressProxy(sandbox.spec)) {
+      const proxy = await this.findEgressProxy(sandbox);
+      if (proxy) await stopContainer(proxy);
     }
   }
 
   async destroy(sandbox: ProviderSandbox): Promise<void> {
-    try {
-      await this.container(sandbox).remove({ force: true, v: true });
-    } catch (error) {
-      if (statusCode(error) !== 404) throw error;
+    await ignoreNotFound(this.container(sandbox).remove({ force: true, v: true }));
+    // The egress proxy and internal network, if any. Looked up by label so they are removed even if the spec changed.
+    const filters = { label: [`${DOCKER_EGRESS_PROXY_LABEL}=${sandbox.id}`] };
+    for (const proxy of await this.docker.listContainers({ all: true, filters })) {
+      await ignoreNotFound(this.docker.getContainer(proxy.Id).remove({ force: true }));
+    }
+    for (const network of await this.docker.listNetworks({ filters })) {
+      await ignoreNotFound(this.docker.getNetwork(network.Id).remove());
     }
   }
 
   async status(sandbox: ProviderSandbox): Promise<ProviderSandboxStatus> {
     try {
       const info = await this.inspect(sandbox);
-      return info.State.Running ? "running" : "stopped";
+      if (!usesEgressProxy(sandbox.spec)) return info.State.Running ? "running" : "stopped";
+      // Without its proxy the sandbox cannot reach anything: it only counts as running with it.
+      const proxy = await this.findEgressProxy(sandbox);
+      if (!proxy) return "missing";
+      return info.State.Running && (await proxy.inspect()).State.Running ? "running" : "stopped";
     } catch (error) {
       if (error instanceof ProviderSandboxMissingError) return "missing";
       throw error;
@@ -229,7 +330,8 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async getUrl(sandbox: ProviderSandbox, port: number): Promise<string> {
-    const info = await this.assertRunning(sandbox);
+    let info = await this.assertRunning(sandbox);
+    if (usesEgressProxy(sandbox.spec)) info = await (await this.requireEgressProxy(sandbox)).inspect();
     const hostPort = info.NetworkSettings.Ports?.[`${port}/tcp`]?.[0]?.HostPort;
     if (!hostPort) throw new SandboxError(`Port ${port} is not published on sandbox "${sandbox.id}"`);
     return `http://${this.urlHost}:${hostPort}`;
@@ -254,6 +356,40 @@ export class DockerSandboxProvider implements SandboxProvider {
     return info;
   }
 
+  private async findEgressProxy(sandbox: ProviderSandbox): Promise<Container | null> {
+    const [proxy] = await this.docker.listContainers({
+      all: true,
+      filters: { label: [`${DOCKER_EGRESS_PROXY_LABEL}=${sandbox.id}`] },
+    });
+    return proxy ? this.docker.getContainer(proxy.Id) : null;
+  }
+
+  private async requireEgressProxy(sandbox: ProviderSandbox): Promise<Container> {
+    const proxy = await this.findEgressProxy(sandbox);
+    if (!proxy) {
+      throw new SandboxError(`The egress proxy of sandbox "${sandbox.id}" no longer exists; destroy and recreate the sandbox`);
+    }
+    return proxy;
+  }
+
+  /** Waits for the proxy's HEALTHCHECK to pass. An image without one counts as ready once running. */
+  private async waitForEgressProxy(proxy: Container): Promise<void> {
+    const deadline = Date.now() + this.egressProxyStartTimeoutMs;
+    for (;;) {
+      const { Name, State } = await proxy.inspect();
+      const health = State.Health?.Status;
+      if (State.Running && (health === undefined || health === "healthy")) return;
+      const name = Name.replace(/^\//, "");
+      if (!State.Running && !State.Restarting) {
+        throw new SandboxError(`Egress proxy ${name} exited with code ${State.ExitCode}; see \`docker logs ${name}\``);
+      }
+      if (health === "unhealthy" || Date.now() > deadline) {
+        throw new SandboxError(`Egress proxy ${name} did not become healthy; see \`docker logs ${name}\``);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
   private async ensureImage(image: string, policy: DockerPullPolicy): Promise<void> {
     if (policy === "never") return;
     if (policy === "if-not-present") {
@@ -269,6 +405,22 @@ export class DockerSandboxProvider implements SandboxProvider {
       this.docker.modem.followProgress(stream, (error: Error | null) => (error ? reject(error) : resolve()));
     });
     await this.docker.getImage(image).inspect();
+  }
+}
+
+async function stopContainer(container: Container): Promise<void> {
+  try {
+    await container.stop({ t: 10 });
+  } catch (error) {
+    if (statusCode(error) !== 304) throw error; // 304: already stopped
+  }
+}
+
+async function ignoreNotFound(operation: Promise<unknown>): Promise<void> {
+  try {
+    await operation;
+  } catch (error) {
+    if (statusCode(error) !== 404) throw error;
   }
 }
 

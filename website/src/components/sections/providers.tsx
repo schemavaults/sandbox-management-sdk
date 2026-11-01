@@ -42,6 +42,12 @@ const PROVIDERS: ProviderTab[] = [
         If an <InlineCode>exec</InlineCode> with <InlineCode>timeoutMs</InlineCode> or{" "}
         <InlineCode>signal</InlineCode> is abandoned, the process inside the container keeps running.
       </>,
+      <>
+        A <InlineCode>network</InlineCode> allowlist puts the sandbox on an internal network with no route out. Its
+        only way out is an egress proxy container, <InlineCode>{"sandbox-<id>-egress"}</InlineCode>, which enforces
+        the allowlist for HTTP and HTTPS (via <InlineCode>HTTP(S)_PROXY</InlineCode>) and publishes the
+        sandbox&apos;s ports. Other protocols are blocked.
+      </>,
     ],
   },
   {
@@ -67,6 +73,11 @@ const PROVIDERS: ProviderTab[] = [
         Authenticates with <InlineCode>VERCEL_OIDC_TOKEN</InlineCode> by default, or with explicit{" "}
         <InlineCode>credentials</InlineCode>.
       </>,
+      <>
+        <InlineCode>network</InlineCode> becomes the native network policy. For per-domain request rules, such as
+        injecting an API key header, pass a <InlineCode>@vercel/sandbox</InlineCode> policy as{" "}
+        <InlineCode>providerOptions.vercel.networkPolicy</InlineCode> instead.
+      </>,
     ],
   },
   {
@@ -88,6 +99,11 @@ const PROVIDERS: ProviderTab[] = [
       <>
         The manager handles the lifecycle, auto-resume and concurrency for you; the provider only maps operations
         onto the backend.
+      </>,
+      <>
+        List the <InlineCode>network</InlineCode> policies your backend enforces in{" "}
+        <InlineCode>networkPolicies</InlineCode>. Without it, the provider only gets sandboxes with unrestricted
+        access.
       </>,
     ],
   },

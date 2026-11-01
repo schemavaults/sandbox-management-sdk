@@ -2,6 +2,7 @@ import type { Writable } from "node:stream";
 import { posix } from "node:path";
 import { ProviderSandboxMissingError, ProviderSandboxStoppedError, SandboxError } from "../errors.js";
 import { outputCollector } from "../internal/output.js";
+import { normalizeCidr } from "../network.js";
 import type {
   MainLogChunk,
   ProviderCreateInput,
@@ -12,7 +13,7 @@ import type {
   SandboxProvider,
 } from "../provider.js";
 import { shellGetMainProcess, shellReadMainLog, shellStartMainProcess } from "../shell-main-process.js";
-import type { ExecOptions, ExecResult, MainProcessInfo, NormalizedCommand } from "../types.js";
+import type { ExecOptions, ExecResult, MainProcessInfo, NormalizedCommand, SandboxNetworkPolicy } from "../types.js";
 
 /** Per-sandbox options, set as `spec.providerOptions.vercel`. */
 export interface VercelSandboxOptions {
@@ -22,7 +23,10 @@ export interface VercelSandboxOptions {
   runtime?: string;
   /** Region, e.g. `"iad1"`. */
   region?: string;
-  /** Passed to `@vercel/sandbox` as-is. */
+  /**
+   * Passed to `@vercel/sandbox` as-is, for what `spec.network` cannot express
+   * (per-domain request rules, header injection). Cannot be combined with `spec.network`.
+   */
   networkPolicy?: unknown;
   /** Up to 5 key/value tags. */
   tags?: Record<string, string>;
@@ -95,6 +99,7 @@ const RUNNING_STATUSES = new Set(["pending", "running"]);
 export class VercelSandboxProvider implements SandboxProvider {
   readonly name: string;
   readonly defaultWorkdir = VERCEL_DEFAULT_WORKDIR;
+  readonly networkPolicies = ["deny-all", "allowlist"] as const;
   private readonly credentials: Partial<VercelCredentials>;
   private readonly defaultImage: string | undefined;
   private readonly defaultRegion: string | undefined;
@@ -110,6 +115,9 @@ export class VercelSandboxProvider implements SandboxProvider {
 
   async create(input: ProviderCreateInput): Promise<ProviderCreateResult> {
     const options = input.spec.providerOptions?.vercel ?? {};
+    if (input.spec.network !== undefined && options.networkPolicy !== undefined) {
+      throw new SandboxError("Set spec.network or spec.providerOptions.vercel.networkPolicy, not both");
+    }
     const image = options.image ?? (options.runtime ? undefined : this.defaultImage);
     const api = await this.api();
     const sandbox = await api.create({
@@ -123,7 +131,7 @@ export class VercelSandboxProvider implements SandboxProvider {
       env: input.spec.env,
       tags: options.tags,
       region: options.region ?? this.defaultRegion,
-      networkPolicy: options.networkPolicy,
+      networkPolicy: input.spec.network === undefined ? options.networkPolicy : toVercelNetworkPolicy(input.spec.network),
     });
     if (input.workdir !== VERCEL_DEFAULT_WORKDIR) {
       const result = await sandbox.runCommand({ cmd: "mkdir", args: ["-p", input.workdir] });
@@ -252,6 +260,29 @@ export class VercelSandboxProvider implements SandboxProvider {
     }));
     return this.apiPromise;
   }
+}
+
+/** The `@vercel/sandbox` `NetworkPolicy` shapes `spec.network` maps onto. */
+type VercelNetworkPolicy =
+  | "allow-all"
+  | "deny-all"
+  | { allow: string[]; subnets?: { allow?: string[]; deny?: string[] } };
+
+/** Maps `spec.network` onto a `@vercel/sandbox` network policy. */
+export function toVercelNetworkPolicy(policy: SandboxNetworkPolicy): VercelNetworkPolicy {
+  if (typeof policy === "string") return policy;
+  const allow = policy.allowDomains ?? [];
+  const allowCidrs = (policy.allowCidrs ?? []).map(normalizeCidr);
+  const denyCidrs = (policy.denyCidrs ?? []).map(normalizeCidr);
+  if (allow.length === 0 && allowCidrs.length === 0) return "deny-all";
+  if (allowCidrs.length === 0 && denyCidrs.length === 0) return { allow };
+  return {
+    allow,
+    subnets: {
+      ...(allowCidrs.length > 0 && { allow: allowCidrs }),
+      ...(denyCidrs.length > 0 && { deny: denyCidrs }),
+    },
+  };
 }
 
 function isNotFound(error: unknown): boolean {

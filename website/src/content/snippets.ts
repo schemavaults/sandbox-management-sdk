@@ -33,7 +33,7 @@ pnpm add @schemavaults/dbh      # Postgres store (or any Kysely instance)`,
 } as const;
 
 export const quickStartSnippet = `import { SandboxManager } from "@schemavaults/sandbox-management-sdk";
-import { DockerSandboxProvider } from "@schemavaults/sandbox-management-sdk/docker";
+import { DOCKER_EGRESS_PROXY_IMAGE, DockerSandboxProvider } from "@schemavaults/sandbox-management-sdk/docker";
 import { VercelSandboxProvider } from "@schemavaults/sandbox-management-sdk/vercel";
 import { DbhSandboxStore } from "@schemavaults/sandbox-management-sdk/dbh";
 import createDbh from "@schemavaults/dbh";
@@ -89,6 +89,19 @@ export const filesSnippet = `await sandboxes.writeFiles(id, [
 // null if the file is missing
 await sandboxes.readTextFile(id, "out/result.json");`;
 
+export const networkSnippet = `await sandboxes.create({
+  spec: {
+    git: { url: "https://github.com/acme/agent.git" },
+    setup: "npm ci",
+    start: "node agent.js",
+    network: {
+      allowDomains: ["github.com", "*.github.com", "registry.npmjs.org", "api.acme.dev"],
+      allowCidrs: ["203.0.113.10", "198.51.100.0/24"], // IP addresses or CIDR ranges
+      denyCidrs: ["169.254.169.254"],                  // always blocked, even for allowed domains
+    },
+  },
+});`;
+
 export const dockerSnippet = `import Docker from "dockerode";
 import { DockerSandboxProvider } from "@schemavaults/sandbox-management-sdk/docker";
 
@@ -99,6 +112,7 @@ new DockerSandboxProvider({
   pullPolicy: "if-not-present",   // or "always" / "never"
   portBindingHost: "127.0.0.1",   // where published ports bind
   urlHost: "localhost",           // host used in getUrl() URLs
+  egressProxyImage: DOCKER_EGRESS_PROXY_IMAGE, // the default: enforces network allowlists
 });`;
 
 export const vercelSnippet = `import { VercelSandboxProvider } from "@schemavaults/sandbox-management-sdk/vercel";

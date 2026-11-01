@@ -1,8 +1,10 @@
 name: Publish
 
-# Publishes to npm with trusted publishing (OIDC): no npm token is stored.
-# Configure the trusted publisher for this repository and workflow file on
-# npmjs.com (package settings -> Trusted publishing).
+# Publishes the egress proxy image to GHCR, then the package to npm with
+# trusted publishing (OIDC): no npm token is stored. Configure the trusted
+# publisher for this repository and workflow file on npmjs.com (package
+# settings -> Trusted publishing). The image is tagged with the package
+# version, which DOCKER_EGRESS_PROXY_IMAGE points at.
 on:
   release:
     types: [published]
@@ -17,7 +19,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  egress-proxy-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Work out the image tag
+        id: tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sandbox-egress-proxy:$version" >> "$GITHUB_OUTPUT"
+      - name: Check whether this image is already published
+        id: check
+        run: |
+          if docker buildx imagetools inspect "${{ steps.tag.outputs.image }}" >/dev/null 2>&1; then
+            echo "${{ steps.tag.outputs.image }} already exists; skipping, so a released image never changes."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.skip == 'false'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: images/egress-proxy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tag.outputs.image }}
+
   publish:
+    needs: egress-proxy-image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

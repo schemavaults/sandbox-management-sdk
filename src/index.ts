@@ -37,6 +37,7 @@ export {
   shellReadMainLog,
   shellStartMainProcess,
 } from "./shell-main-process.js";
+export { assertNetworkPolicySupported, networkPolicyKind, normalizeCidr } from "./network.js";
 export { SANDBOX_STATUSES, TRANSITIONAL_STATUSES } from "./types.js";
 export type {
   ArgvCommand,
@@ -47,6 +48,9 @@ export type {
   MainProcessInfo,
   NormalizedCommand,
   SandboxFile,
+  SandboxNetworkAllowlist,
+  SandboxNetworkPolicy,
+  SandboxNetworkPolicyKind,
   SandboxProviderOptions,
   SandboxRecord,
   SandboxResources,

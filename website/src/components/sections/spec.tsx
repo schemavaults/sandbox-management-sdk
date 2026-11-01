@@ -1,7 +1,9 @@
 import { Callout, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/lib/ui";
 import type { ReactElement, ReactNode } from "react";
+import { Code } from "@/components/code";
 import { InlineCode } from "@/components/inline-code";
 import { Section } from "@/components/section";
+import { networkSnippet } from "@/content/snippets";
 
 const FIELDS: { field: string; meaning: ReactNode }[] = [
   {
@@ -66,6 +68,16 @@ const FIELDS: { field: string; meaning: ReactNode }[] = [
     ),
   },
   {
+    field: "network",
+    meaning: (
+      <>
+        Outbound access: <InlineCode>&quot;allow-all&quot;</InlineCode> (default),{" "}
+        <InlineCode>&quot;deny-all&quot;</InlineCode>, or an allowlist{" "}
+        <InlineCode>{"{ allowDomains?, allowCidrs?, denyCidrs? }"}</InlineCode>.
+      </>
+    ),
+  },
+  {
     field: "providerOptions",
     meaning: (
       <>
@@ -119,6 +131,19 @@ export function Spec(): ReactElement {
           <InlineCode>spec.env</InlineCode> and <InlineCode>git.auth</InlineCode> are stored in your store as-is.
           Treat the table as sensitive, or pass short-lived credentials.
         </Callout>
+      </div>
+
+      <div className="mt-10 min-w-0">
+        <h3 className="text-lg font-semibold">Network access</h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          <InlineCode>network</InlineCode> limits where a sandbox can connect, for example so that an agent can only
+          reach the platforms it works with. Everything not on the allowlist is blocked, and the policy applies from
+          creation, so <InlineCode>git</InlineCode> and <InlineCode>setup</InlineCode> run under it too. A provider
+          only gets sandboxes whose policy it can enforce; otherwise <InlineCode>create</InlineCode> throws before
+          anything is created, so a policy is never silently ignored. Vercel enforces allowlists natively, and
+          Docker through an egress proxy container next to each sandbox.
+        </p>
+        <Code code={networkSnippet} title="network.ts" className="mt-5" />
       </div>
     </Section>
   );

@@ -9,6 +9,7 @@ import {
   SandboxNotFoundError,
   SandboxStateError,
 } from "./errors.js";
+import { assertNetworkPolicySupported } from "./network.js";
 import type { MainLogChunk, ProviderSandbox, SandboxProvider } from "./provider.js";
 import type { SandboxListFilter, SandboxRecordPatch, SandboxStore } from "./store.js";
 import { TRANSITIONAL_STATUSES } from "./types.js";
@@ -109,6 +110,7 @@ export class SandboxManager {
     }
     const provider = this.getProvider(providerName);
     validateSpec(options.spec);
+    assertNetworkPolicySupported(provider, options.spec.network);
 
     const now = this.now();
     let record: SandboxRecord = {

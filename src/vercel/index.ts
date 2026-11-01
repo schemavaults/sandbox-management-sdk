@@ -1,4 +1,4 @@
-export { VERCEL_DEFAULT_WORKDIR, VercelSandboxProvider } from "./provider.js";
+export { VERCEL_DEFAULT_WORKDIR, VercelSandboxProvider, toVercelNetworkPolicy } from "./provider.js";
 export type {
   VercelCredentials,
   VercelRunCommandParams,

@@ -1,6 +1,7 @@
 import { SandboxError } from "./errors.js";
 import { encodeBase64 } from "./internal/base64.js";
 import * as posix from "./internal/posix-path.js";
+import { validateNetworkPolicy } from "./network.js";
 import type { CommandInput, GitSource, NormalizedCommand, SandboxSpec } from "./types.js";
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -64,6 +65,7 @@ export function validateSpec(spec: SandboxSpec): void {
       throw new SandboxError(`git.depth must be a positive integer`);
     }
   }
+  validateNetworkPolicy(spec.network);
 }
 
 const GIT_CLONE_SCRIPT = `set -e
