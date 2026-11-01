@@ -89,6 +89,19 @@ export const filesSnippet = `await sandboxes.writeFiles(id, [
 // null if the file is missing
 await sandboxes.readTextFile(id, "out/result.json");`;
 
+export const networkSnippet = `await sandboxes.create({
+  spec: {
+    git: { url: "https://github.com/acme/agent.git" },
+    setup: "npm ci",
+    start: "node agent.js",
+    network: {
+      allowDomains: ["github.com", "*.github.com", "registry.npmjs.org", "api.acme.dev"],
+      allowCidrs: ["203.0.113.10", "198.51.100.0/24"], // IP addresses or CIDR ranges
+      denyCidrs: ["169.254.169.254"],                  // always blocked, even for allowed domains
+    },
+  },
+});`;
+
 export const dockerSnippet = `import Docker from "dockerode";
 import { DockerSandboxProvider } from "@schemavaults/sandbox-management-sdk/docker";
 

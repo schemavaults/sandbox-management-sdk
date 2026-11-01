@@ -85,11 +85,40 @@ The `SandboxSpec` is stored with the sandbox, so any process can later resume it
 | `ports` | Ports reachable through `getUrl`. |
 | `timeoutMs` | Maximum run time. Vercel enforces it itself. For Docker, call `stopExpired()` periodically. |
 | `resources` | `{ vcpus?, memoryMb? }`. Vercel only supports `vcpus` (2 GB of memory per vCPU). |
+| `network` | Outbound access: `"allow-all"` (default), `"deny-all"`, or an allowlist `{ allowDomains?, allowCidrs?, denyCidrs? }`. See [Network access](#network-access). |
 | `providerOptions` | Provider-specific settings: `{ docker: { image, user, network, pullPolicy, labels } }` or `{ vercel: { image \| runtime, region, networkPolicy, tags } }`. |
 
 A command is either a string, run with `sh -c`, or `{ cmd, args?, cwd?, env? }`, run as an exact argv with no shell. A relative `cwd` resolves against `workdir`.
 
 > `spec.env` and `git.auth` are stored in your store as-is. Treat the table as sensitive, or pass short-lived credentials.
+
+### Network access
+
+`spec.network` limits where a sandbox can connect, for example so that an agent can only reach the platforms it works with:
+
+```ts
+await sandboxes.create({
+  spec: {
+    git: { url: "https://github.com/acme/agent.git" },
+    setup: "npm ci",
+    start: "node agent.js",
+    network: {
+      allowDomains: ["github.com", "*.github.com", "registry.npmjs.org", "api.acme.dev"],
+      allowCidrs: ["203.0.113.10", "198.51.100.0/24"], // IP addresses or CIDR ranges
+      denyCidrs: ["169.254.169.254"],                  // always blocked, even for allowed domains
+    },
+  },
+});
+```
+
+- Everything not on the allowlist is blocked. `"deny-all"` blocks everything, and `"allow-all"` (the default) blocks nothing.
+- The policy applies from creation, so `git` and `setup` run under it too. Allow your git host and package registries, or those steps fail.
+- A provider only gets sandboxes whose policy it can enforce. Otherwise `create` throws before anything is created or stored, so a policy is never silently ignored.
+
+| Provider | `"deny-all"` | Allowlist |
+| --- | --- | --- |
+| Vercel | Yes | Yes, as the native network policy |
+| Docker | Yes, with `--network none` (so no `ports`) | No |
 
 ### Lifecycle
 
@@ -145,6 +174,7 @@ new DockerSandboxProvider({
 - `stop` and `wake` map to `docker stop` and `docker start`, so the container filesystem persists. Published ports get random host ports again on every start, and `getUrl` looks them up.
 - Docker has no native timeout. Run `sandboxes.stopExpired()` from a cron job.
 - If a command passed to `exec` with `timeoutMs` or `signal` is abandoned, the process inside the container keeps running.
+- `spec.network: "deny-all"` runs the container with `--network none`, so it cannot publish `ports` or join `providerOptions.docker.network`. Docker cannot enforce allowlists, so `create` refuses them. To filter traffic yourself, attach the containers to an `--internal` network behind a proxy you run, with `providerOptions.docker.network`.
 
 ### Vercel Sandbox
 
@@ -157,10 +187,13 @@ new VercelSandboxProvider({
 
 - Sandboxes are created `persistent` and named after the SDK ID. `stop` snapshots the filesystem and `wake` restores it.
 - `timeoutMs` becomes the native sandbox timeout, and `extendTimeout(id, ms)` extends it. The SDK detects when Vercel has stopped a sandbox and resumes it through its own `resume` flow, instead of letting `@vercel/sandbox` resume it silently without relaunching your main process.
+- `spec.network` becomes the sandbox's native network policy. For rules `spec.network` cannot express, such as injecting an API key header into requests to one domain, pass a `@vercel/sandbox` `NetworkPolicy` as `providerOptions.vercel.networkPolicy` instead (`toVercelNetworkPolicy(network)` gives you a starting point). The two cannot be combined.
 
 ### Writing a provider
 
 Implement `SandboxProvider` (see `src/provider.ts`). For backends that can only "run a command", the exported `shellStartMainProcess`, `shellGetMainProcess` and `shellReadMainLog` implement the main-process and log bookkeeping on top of `exec`.
+
+If your backend can restrict network access, list what it enforces in `networkPolicies` (`"deny-all"`, `"allowlist"`) and apply `spec.network` in `create`. A provider without `networkPolicies` is only given sandboxes with unrestricted access. `networkPolicyKind` and `normalizeCidr` help with the mapping.
 
 ## Stores
 
@@ -208,7 +241,7 @@ provider.simulateExternalStop(id); // e.g. a provider-side timeout
 provider.appendMainLog(id, "server listening\n");
 ```
 
-The mock executes nothing. It records every call, keeps files in memory, and simulates stop, wake and external stops.
+The mock executes nothing. It records every call, keeps files in memory, and simulates stop, wake and external stops. It accepts every `spec.network` policy; pass `networkPolicies` to simulate a provider that enforces fewer.
 
 ## Development
 

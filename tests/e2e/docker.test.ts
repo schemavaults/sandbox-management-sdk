@@ -201,4 +201,39 @@ describe("DockerSandboxProvider e2e", () => {
     },
     TIMEOUT,
   );
+
+  it(
+    'cuts a "deny-all" sandbox off from the network, across stop and resume',
+    async () => {
+      const manager = createManager();
+      const { id, providerRef } = await manager.create({
+        spec: { git: { url: "file:///srv/fixture-repo" }, network: "deny-all" },
+      });
+      createdIds.push(id);
+      expect((await docker.getContainer(providerRef!).inspect()).HostConfig.NetworkMode).toBe("none");
+      const offline = async () => {
+        expect((await manager.exec(id, "ls /sys/class/net")).stdout).toBe("lo\n");
+        expect((await manager.exec(id, "wget -q -T 3 -O /dev/null http://1.1.1.1")).exitCode).not.toBe(0);
+      };
+      await offline();
+      expect(await manager.readTextFile(id, "README.md")).toBe("fixture v2\n"); // local clones still work
+      await manager.stop(id);
+      await manager.resume(id);
+      await offline();
+      await manager.destroy(id);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "refuses a network allowlist without creating a container",
+    async () => {
+      const manager = createManager();
+      await expect(manager.create({ spec: { network: { allowDomains: ["github.com"] } } })).rejects.toThrow(
+        "cannot enforce a network allowlist",
+      );
+      expect(await manager.list()).toHaveLength(0);
+    },
+    TIMEOUT,
+  );
 });

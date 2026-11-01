@@ -8,7 +8,14 @@ import type {
   ResolvedSandboxFile,
   SandboxProvider,
 } from "../provider.js";
-import type { ExecOptions, ExecResult, MainProcessInfo, NormalizedCommand, SandboxSpec } from "../types.js";
+import type {
+  ExecOptions,
+  ExecResult,
+  MainProcessInfo,
+  NormalizedCommand,
+  SandboxNetworkPolicyKind,
+  SandboxSpec,
+} from "../types.js";
 
 export type MockOperation =
   | "create"
@@ -70,6 +77,12 @@ export interface MockSandboxProviderOptions {
   lifecycleDelayMs?: number;
   /** Called before every operation; throw from it to inject failures. */
   beforeOperation?: (operation: MockOperation, sandboxId: string) => void | Promise<void>;
+  /**
+   * `spec.network` policies the mock accepts. Default: all of them. The mock
+   * only records the policy (in `spec`); narrow this to simulate a provider
+   * that cannot enforce one.
+   */
+  networkPolicies?: readonly Exclude<SandboxNetworkPolicyKind, "allow-all">[];
 }
 
 /**
@@ -80,6 +93,7 @@ export interface MockSandboxProviderOptions {
 export class MockSandboxProvider implements SandboxProvider {
   readonly name: string;
   readonly defaultWorkdir: string;
+  readonly networkPolicies: readonly Exclude<SandboxNetworkPolicyKind, "allow-all">[];
   readonly calls: MockCall[] = [];
   private readonly sandboxes = new Map<string, MockSandboxState>();
   private execHandler: MockExecHandler;
@@ -93,6 +107,7 @@ export class MockSandboxProvider implements SandboxProvider {
     this.execHandler = options.execHandler ?? (() => undefined);
     this.lifecycleDelayMs = options.lifecycleDelayMs ?? 0;
     this.beforeOperation = options.beforeOperation;
+    this.networkPolicies = options.networkPolicies ?? ["deny-all", "allowlist"];
   }
 
   setExecHandler(handler: MockExecHandler): void {

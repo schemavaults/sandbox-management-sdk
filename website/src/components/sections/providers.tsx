@@ -42,6 +42,11 @@ const PROVIDERS: ProviderTab[] = [
         If an <InlineCode>exec</InlineCode> with <InlineCode>timeoutMs</InlineCode> or{" "}
         <InlineCode>signal</InlineCode> is abandoned, the process inside the container keeps running.
       </>,
+      <>
+        <InlineCode>network: &quot;deny-all&quot;</InlineCode> runs the container with{" "}
+        <InlineCode>--network none</InlineCode>, so it cannot publish <InlineCode>ports</InlineCode>. Docker cannot
+        enforce allowlists, so <InlineCode>create</InlineCode> refuses them.
+      </>,
     ],
   },
   {
@@ -67,6 +72,11 @@ const PROVIDERS: ProviderTab[] = [
         Authenticates with <InlineCode>VERCEL_OIDC_TOKEN</InlineCode> by default, or with explicit{" "}
         <InlineCode>credentials</InlineCode>.
       </>,
+      <>
+        <InlineCode>network</InlineCode> becomes the native network policy. For per-domain request rules, such as
+        injecting an API key header, pass a <InlineCode>@vercel/sandbox</InlineCode> policy as{" "}
+        <InlineCode>providerOptions.vercel.networkPolicy</InlineCode> instead.
+      </>,
     ],
   },
   {
@@ -88,6 +98,11 @@ const PROVIDERS: ProviderTab[] = [
       <>
         The manager handles the lifecycle, auto-resume and concurrency for you; the provider only maps operations
         onto the backend.
+      </>,
+      <>
+        List the <InlineCode>network</InlineCode> policies your backend enforces in{" "}
+        <InlineCode>networkPolicies</InlineCode>. Without it, the provider only gets sandboxes with unrestricted
+        access.
       </>,
     ],
   },

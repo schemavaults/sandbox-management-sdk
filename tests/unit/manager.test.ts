@@ -105,7 +105,34 @@ describe("SandboxManager.create", () => {
     await expect(manager.create({ spec: { ports: [0] } })).rejects.toBeInstanceOf(SandboxError);
     await expect(manager.create({ spec: { env: { "BAD-NAME": "x" } } })).rejects.toThrow("Invalid environment");
     await expect(manager.create({ spec: { workdir: "relative" } })).rejects.toThrow("absolute");
+    await expect(manager.create({ spec: { network: { allowDomains: ["https://x.com"] } } })).rejects.toThrow("Invalid domain");
     expect(await store.list()).toHaveLength(0);
+  });
+
+  it("passes spec.network to providers that enforce it", async () => {
+    const { manager, provider } = setup();
+    const network = { allowDomains: ["github.com"], allowCidrs: ["10.0.0.0/8"] };
+    const record = await manager.create({ spec: { network } });
+    expect(provider.getState(record.id)?.spec.network).toEqual(network);
+    expect((await manager.create({ spec: { network: "deny-all" } })).status).toBe("running");
+  });
+
+  it("refuses a network policy the provider cannot enforce, before creating anything", async () => {
+    const { manager, provider, store } = setup({ networkPolicies: ["deny-all"] });
+    await expect(manager.create({ spec: { network: { allowDomains: ["github.com"] } } })).rejects.toThrow(
+      'Provider "mock" cannot enforce a network allowlist (spec.network): it enforces only "deny-all"',
+    );
+    expect(await store.list()).toHaveLength(0);
+    expect(provider.calls).toHaveLength(0);
+    expect((await manager.create({ spec: { network: "deny-all" } })).status).toBe("running");
+  });
+
+  it("only accepts unrestricted network access on providers that declare no network support", async () => {
+    const { manager, store } = setup({ networkPolicies: [] });
+    await expect(manager.create({ spec: { network: "deny-all" } })).rejects.toThrow("enforces no network restrictions");
+    expect(await store.list()).toHaveLength(0);
+    expect((await manager.create({ spec: { network: "allow-all" } })).status).toBe("running");
+    expect((await manager.create({ spec: {} })).status).toBe("running");
   });
 
   it("requires a provider when several are registered", async () => {

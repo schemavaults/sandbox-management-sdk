@@ -40,6 +40,34 @@ export interface SandboxResources {
 }
 
 /**
+ * Outbound network access for a sandbox, enforced by its provider.
+ *
+ * - `"allow-all"` (the default): no restriction.
+ * - `"deny-all"`: no outbound access at all.
+ * - An allowlist: only the listed destinations are reachable.
+ *
+ * The manager refuses to create a sandbox on a provider that cannot enforce
+ * the policy, so a policy is never silently ignored.
+ */
+export type SandboxNetworkPolicy = "allow-all" | "deny-all" | SandboxNetworkAllowlist;
+
+/** Everything not listed is denied, so an empty allowlist means no access. */
+export interface SandboxNetworkAllowlist {
+  /**
+   * Host names the sandbox may reach, e.g. `"github.com"`. A leading `*.`
+   * matches subdomains (`"*.npmjs.org"`); `"*"` matches every domain.
+   */
+  allowDomains?: string[];
+  /** IP addresses or CIDR ranges the sandbox may reach, e.g. `"203.0.113.10"` or `"10.0.0.0/8"`. */
+  allowCidrs?: string[];
+  /** IP addresses or CIDR ranges that are always blocked, even for allowed domains. */
+  denyCidrs?: string[];
+}
+
+/** The kind of a `SandboxNetworkPolicy`. Providers declare which kinds they enforce. */
+export type SandboxNetworkPolicyKind = "allow-all" | "deny-all" | "allowlist";
+
+/**
  * Provider-specific spec options, keyed by provider name. Each adapter
  * augments this interface with its own typed key (`docker`, `vercel`, ...).
  */
@@ -74,6 +102,11 @@ export interface SandboxSpec {
   /** Maximum time a sandbox may run before it is stopped. */
   timeoutMs?: number;
   resources?: SandboxResources;
+  /**
+   * Outbound network access. Applies from creation, so `git` and `setup`
+   * run under it too. Default `"allow-all"`.
+   */
+  network?: SandboxNetworkPolicy;
   providerOptions?: SandboxProviderOptions;
 }
 

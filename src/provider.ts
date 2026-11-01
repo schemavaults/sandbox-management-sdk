@@ -3,6 +3,7 @@ import type {
   ExecResult,
   MainProcessInfo,
   NormalizedCommand,
+  SandboxNetworkPolicyKind,
   SandboxSpec,
 } from "./types.js";
 
@@ -58,6 +59,13 @@ export interface SandboxProvider {
   readonly name: string;
   /** Working directory used when `spec.workdir` is not set. */
   readonly defaultWorkdir: string;
+  /**
+   * The restrictive `spec.network` policies this provider enforces. The
+   * manager refuses to create a sandbox whose policy is not listed, so a
+   * provider that leaves this out never silently ignores one. An unset or
+   * `"allow-all"` policy is always accepted.
+   */
+  readonly networkPolicies?: readonly Exclude<SandboxNetworkPolicyKind, "allow-all">[];
 
   /** Create the sandbox and leave it running with `workdir` present. */
   create(input: ProviderCreateInput): Promise<ProviderCreateResult>;

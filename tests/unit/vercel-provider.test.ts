@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import type { NetworkPolicy } from "@vercel/sandbox";
 import { ProviderSandboxStoppedError, SandboxManager } from "../../src/index.js";
+import type { SandboxNetworkPolicy } from "../../src/index.js";
 import { InMemorySandboxStore } from "../../src/testing/index.js";
-import { VercelSandboxProvider } from "../../src/vercel/index.js";
+import { VercelSandboxProvider, toVercelNetworkPolicy } from "../../src/vercel/index.js";
 import type {
   VercelRunCommandParams,
   VercelSandboxApi,
@@ -207,5 +209,47 @@ describe("VercelSandboxProvider", () => {
     const { id } = await manager.create({ spec: { timeoutMs: 60_000 } });
     await manager.extendTimeout(id, 30_000);
     expect(api.sandboxes.get(id)!.extensions).toEqual([30_000]);
+  });
+
+  it("maps spec.network onto the native network policy", async () => {
+    const { api, manager } = setup();
+    const policyFor = async (network: SandboxNetworkPolicy | undefined) => {
+      const { id } = await manager.create({ spec: { network } });
+      return api.sandboxes.get(id)!.params.networkPolicy;
+    };
+    expect(await policyFor(undefined)).toBeUndefined();
+    expect(await policyFor("allow-all")).toBe("allow-all");
+    expect(await policyFor("deny-all")).toBe("deny-all");
+    expect(await policyFor({})).toBe("deny-all");
+    expect(await policyFor({ denyCidrs: ["10.0.0.0/8"] })).toBe("deny-all");
+    expect(await policyFor({ allowDomains: ["github.com", "*.npmjs.org"] })).toEqual({ allow: ["github.com", "*.npmjs.org"] });
+    expect(
+      await policyFor({
+        allowDomains: ["api.example.com"],
+        allowCidrs: ["203.0.113.10", "2001:db8::1", "198.51.100.0/24"],
+        denyCidrs: ["169.254.169.254"],
+      }),
+    ).toEqual({
+      allow: ["api.example.com"],
+      subnets: { allow: ["203.0.113.10/32", "2001:db8::1/128", "198.51.100.0/24"], deny: ["169.254.169.254/32"] },
+    });
+    expect(await policyFor({ allowCidrs: ["203.0.113.10"] })).toEqual({ allow: [], subnets: { allow: ["203.0.113.10/32"] } });
+  });
+
+  it("produces policies that type-check as @vercel/sandbox NetworkPolicy values", () => {
+    const networks: SandboxNetworkPolicy[] = ["allow-all", "deny-all", {}, { allowDomains: ["a.com"], allowCidrs: ["10.0.0.1"], denyCidrs: ["10.0.0.0/8"] }];
+    const policies: NetworkPolicy[] = networks.map(toVercelNetworkPolicy);
+    expect(policies).toHaveLength(4);
+  });
+
+  it("passes providerOptions.vercel.networkPolicy through, but not together with spec.network", async () => {
+    const { api, manager } = setup();
+    const native = { allow: { "api.example.com": [{ transform: [{ headers: { authorization: "Bearer x" } }] }] } };
+    const { id } = await manager.create({ spec: { providerOptions: { vercel: { networkPolicy: native } } } });
+    expect(api.sandboxes.get(id)!.params.networkPolicy).toEqual(native);
+
+    await expect(
+      manager.create({ spec: { network: "deny-all", providerOptions: { vercel: { networkPolicy: native } } } }),
+    ).rejects.toThrow("Set spec.network or spec.providerOptions.vercel.networkPolicy, not both");
   });
 });

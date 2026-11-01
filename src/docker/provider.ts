@@ -3,6 +3,7 @@ import type { Container, ContainerInspectInfo } from "dockerode";
 import type { Duplex } from "node:stream";
 import { ProviderSandboxMissingError, ProviderSandboxStoppedError, SandboxError } from "../errors.js";
 import { outputCollector } from "../internal/output.js";
+import { assertNetworkPolicySupported } from "../network.js";
 import type {
   MainLogChunk,
   ProviderCreateInput,
@@ -13,7 +14,7 @@ import type {
   SandboxProvider,
 } from "../provider.js";
 import { shellGetMainProcess, shellReadMainLog, shellStartMainProcess } from "../shell-main-process.js";
-import type { ExecOptions, ExecResult, MainProcessInfo, NormalizedCommand } from "../types.js";
+import type { ExecOptions, ExecResult, MainProcessInfo, NormalizedCommand, SandboxSpec } from "../types.js";
 import { createTar, extractFirstFile } from "./tar.js";
 
 export type DockerPullPolicy = "if-not-present" | "always" | "never";
@@ -24,7 +25,10 @@ export interface DockerSandboxOptions {
   image?: string;
   /** User commands run as (container `User`). */
   user?: string;
-  /** Docker network to attach the container to. */
+  /**
+   * Docker network to attach the container to. For `spec.network: "deny-all"`
+   * leave it unset (the container gets `--network none`).
+   */
   network?: string;
   pullPolicy?: DockerPullPolicy;
   /** Extra container labels. */
@@ -69,6 +73,8 @@ const KEEPALIVE_SCRIPT = "trap 'exit 0' TERM INT; while :; do sleep 3600 & wait 
 export class DockerSandboxProvider implements SandboxProvider {
   readonly name: string;
   readonly defaultWorkdir: string;
+  /** `"deny-all"` runs the container with `--network none`. Allowlists are not supported. */
+  readonly networkPolicies = ["deny-all"] as const;
   private readonly docker: Docker;
   private readonly defaultImage: string | undefined;
   private readonly pullPolicy: DockerPullPolicy;
@@ -93,6 +99,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (!image) {
       throw new SandboxError("No Docker image: set spec.providerOptions.docker.image or defaultImage");
     }
+    const networkMode = dockerNetworkMode(this, input.spec, options);
     await this.ensureImage(image, options.pullPolicy ?? this.pullPolicy);
 
     const ports = (input.spec.ports ?? []).map((port) => `${port}/tcp`);
@@ -114,7 +121,7 @@ export class DockerSandboxProvider implements SandboxProvider {
         ),
         Memory: memoryMb ? memoryMb * 1024 * 1024 : undefined,
         NanoCpus: vcpus ? Math.round(vcpus * 1e9) : undefined,
-        NetworkMode: options.network,
+        NetworkMode: networkMode,
       },
     });
     try {
@@ -270,6 +277,26 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     await this.docker.getImage(image).inspect();
   }
+}
+
+/** The container's `NetworkMode` for `spec.network`, or throws if the spec cannot be honored. */
+function dockerNetworkMode(
+  provider: DockerSandboxProvider,
+  spec: SandboxSpec,
+  options: DockerSandboxOptions,
+): string | undefined {
+  // Also checked by the manager; repeated for callers that use the provider directly.
+  assertNetworkPolicySupported(provider, spec.network);
+  if (spec.network !== "deny-all") return options.network;
+  if (options.network !== undefined && options.network !== "none") {
+    throw new SandboxError(
+      `spec.network "deny-all" conflicts with spec.providerOptions.docker.network "${options.network}"`,
+    );
+  }
+  if (spec.ports?.length) {
+    throw new SandboxError(`spec.network "deny-all" gives a Docker sandbox no network, so spec.ports cannot be published`);
+  }
+  return "none";
 }
 
 function statusCode(error: unknown): number | undefined {
