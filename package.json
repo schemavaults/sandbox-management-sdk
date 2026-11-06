@@ -1,6 +1,6 @@
 {
   "name": "@schemavaults/sandbox-management-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Universal sandbox management SDK: create, set up, start, stop, resume and list sandboxes across Docker and Vercel Sandbox.",
   "license": "MIT",
   "private": false,
