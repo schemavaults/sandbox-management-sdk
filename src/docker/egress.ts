@@ -7,7 +7,7 @@ import type { SandboxNetworkAllowlist, SandboxSpec } from "../types.js";
  * The egress proxy image published with this SDK version (built from
  * `images/egress-proxy`). Keep the tag in step with `package.json`.
  */
-export const DOCKER_EGRESS_PROXY_IMAGE = "ghcr.io/schemavaults/sandbox-egress-proxy:0.1.1";
+export const DOCKER_EGRESS_PROXY_IMAGE = "ghcr.io/schemavaults/sandbox-egress-proxy:0.1.2";
 
 /** Label on a sandbox's egress proxy container and internal network; the value is the sandbox ID. */
 export const DOCKER_EGRESS_PROXY_LABEL = "dev.schemavaults.sandbox.egress-proxy";
