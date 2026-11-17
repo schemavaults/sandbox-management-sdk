@@ -5,4 +5,5 @@ dist/
 .env.*
 .DS_Store
 coverage/
+images/egress-proxy/target/
 .npmrc

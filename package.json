@@ -1,6 +1,6 @@
 {
   "name": "@schemavaults/sandbox-management-sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Universal sandbox management SDK: create, set up, start, stop, resume and list sandboxes across Docker and Vercel Sandbox.",
   "license": "MIT",
   "private": false,
@@ -78,7 +78,7 @@
     "test:e2e:docker": "bun test ./tests/e2e/docker.test.ts",
     "test:e2e:dbh": "bun test ./tests/e2e/dbh-store.test.ts",
     "test:e2e:fixture-image": "docker build --tag sandbox-sdk-e2e:latest ./tests/e2e/fixture",
-    "test:e2e:egress-proxy-image": "docker build --file images/egress-proxy/Dockerfile --tag sandbox-egress-proxy:e2e .",
+    "test:e2e:egress-proxy-image": "docker build --tag sandbox-egress-proxy:e2e images/egress-proxy",
     "test:smoke:node": "node ./tests/smoke/node-smoke.mjs",
     "prepublishOnly": "bun run build"
   },
