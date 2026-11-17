@@ -293,4 +293,11 @@ bun run build                                      # static export in website/ou
 
 ### Releasing
 
-Bump `version` in `package.json` and the tag in `DOCKER_EGRESS_PROXY_IMAGE` (`src/docker/egress.ts`; a unit test checks they match), then merge to `main`. On every push to `main`, `.github/workflows/publish.yml` checks whether that version is on npm, and stops there if it is. If it isn't, it pushes the egress proxy image to `ghcr.io/<owner>/sandbox-egress-proxy:<version>` for amd64 and arm64, publishes to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no token), then tags the commit `v<version>` and creates a GitHub release with generated notes. If a run fails partway, re-run its failed jobs; it skips an image that is already pushed and a GitHub release that already exists. The first time, make the GHCR package public (**Package settings → Change visibility**) so Docker hosts can pull it.
+Bump `version` in `package.json` and the tag in `DOCKER_EGRESS_PROXY_IMAGE` (`src/docker/egress.ts`; a unit test checks they match), then merge to `main`. On every push to `main`, `.github/workflows/publish.yml` checks whether that version is on npm and on GitHub Packages, and stops there if it is on both. Otherwise it pushes the egress proxy image to `ghcr.io/<owner>/sandbox-egress-proxy:<version>` for amd64 and arm64, then publishes to each registry that lacks the version: npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no token), and GitHub Packages (`npm.pkg.github.com`) with the workflow's `GITHUB_TOKEN`. After a new npm publish it tags the commit `v<version>` and creates a GitHub release with generated notes. If a run fails partway, re-run its failed jobs; it skips an image that is already pushed and a GitHub release that already exists, and a version still missing from GitHub Packages is also published on the next push to `main`. The first time, make the GHCR image and the GitHub Packages npm package public (**Package settings → Change visibility** on each) so Docker hosts can pull the image and anyone can install the package.
+
+To install from GitHub Packages instead of npm, point the scope at it in `.npmrc`. GitHub Packages asks for a token even for public packages (a personal access token with `read:packages`, or `GITHUB_TOKEN` in Actions), and the scope line sends every `@schemavaults/*` package there, `@schemavaults/dbh` included:
+
+```ini
+@schemavaults:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```

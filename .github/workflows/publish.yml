@@ -1,13 +1,16 @@
 name: Publish
 
 # Releases the version in package.json when a push to main carries one that is
-# not on npm yet; any other push stops after the first job. A release pushes the
-# egress proxy image to GHCR, publishes the package to npm with trusted
-# publishing (OIDC: no npm token is stored), then tags the commit v<version> and
-# creates a GitHub release. Configure the trusted publisher for this repository
-# and workflow file on npmjs.com (package settings -> Trusted publishing). The
-# image is tagged with the package version, which DOCKER_EGRESS_PROXY_IMAGE
-# points at. If a run fails partway, re-run its failed jobs.
+# missing from npm or from GitHub Packages; any other push stops after the first
+# job. A release pushes the egress proxy image to GHCR, then publishes the
+# package to whichever registries lack it: npm with trusted publishing (OIDC: no
+# npm token is stored) and GitHub Packages with the workflow's GITHUB_TOKEN.
+# After a new npm publish it tags the commit v<version> and creates a GitHub
+# release. Configure the trusted publisher for this repository and workflow file
+# on npmjs.com (package settings -> Trusted publishing). The image is tagged
+# with the package version, which DOCKER_EGRESS_PROXY_IMAGE points at. If a run
+# fails partway, re-run its failed jobs; a version that is still missing from
+# GitHub Packages is also published on the next push to main.
 on:
   push:
     branches: [main]
@@ -22,26 +25,49 @@ concurrency:
 
 jobs:
   version:
-    name: Check whether this version is on npm
+    name: Check which registries lack this version
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     outputs:
       version: ${{ steps.check.outputs.version }}
       release: ${{ steps.check.outputs.release }}
+      npm: ${{ steps.check.outputs.npm }}
+      github_packages: ${{ steps.check.outputs.github_packages }}
     steps:
       - uses: actions/checkout@v7
       - id: check
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
-            echo "$name@$version is already on npm; nothing to release."
-            echo "release=false" >> "$GITHUB_OUTPUT"
+          # GitHub Packages wants a token even to read; npm expands ${NODE_AUTH_TOKEN} itself.
+          printf '%s\n' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$RUNNER_TEMP/github-packages.npmrc"
+          missing() {
+            [ "$(npm view "$name@$version" version --registry="$1" --userconfig="$2" 2>/dev/null)" != "$version" ]
+          }
+          release=false
+          if missing https://registry.npmjs.org /dev/null; then
+            echo "$name@$version is not on npm yet; publishing it there."
+            echo "npm=true" >> "$GITHUB_OUTPUT"
+            release=true
           else
-            echo "$name@$version is not on npm yet; releasing it."
-            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is already on npm."
+            echo "npm=false" >> "$GITHUB_OUTPUT"
           fi
+          if missing https://npm.pkg.github.com "$RUNNER_TEMP/github-packages.npmrc"; then
+            echo "$name@$version is not on GitHub Packages yet; publishing it there."
+            echo "github_packages=true" >> "$GITHUB_OUTPUT"
+            release=true
+          else
+            echo "$name@$version is already on GitHub Packages."
+            echo "github_packages=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
 
   egress-proxy-image:
     needs: version
@@ -81,6 +107,7 @@ jobs:
 
   npm:
     needs: [version, egress-proxy-image]
+    if: needs.version.outputs.npm == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -99,6 +126,34 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint && bun run typecheck && bun run test:unit && bun run build
       - run: npm publish --provenance --access public
+
+  github-packages:
+    name: GitHub Packages
+    needs: [version, egress-proxy-image]
+    if: needs.version.outputs.github_packages == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      # Install before setup-node points the @schemavaults scope at GitHub
+      # Packages, so dev dependencies such as @schemavaults/dbh still come from npm.
+      - run: bun install --frozen-lockfile
+      - run: bun run lint && bun run typecheck && bun run test:unit && bun run build
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@schemavaults"
+      # The package links to this repository through package.json "repository".
+      # It starts out private: make it public once in its package settings.
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   github-release:
     needs: [version, npm]
