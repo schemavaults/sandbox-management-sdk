@@ -18,13 +18,13 @@ import {
   DOCKER_EGRESS_PROXY_IMAGE,
   DOCKER_EGRESS_PROXY_LABEL,
   EGRESS_PROXY_ALIAS,
+  EGRESS_PROXY_CONFIG_ENV,
   SANDBOX_ALIAS,
   dockerNetworkPlan,
   egressProxyConfig,
   egressProxyEnv,
   usesEgressProxy,
 } from "./egress.js";
-import { EGRESS_PROXY_CONFIG_ENV } from "./egress-proxy/config.js";
 import { createTar, extractFirstFile } from "./tar.js";
 
 export type DockerPullPolicy = "if-not-present" | "always" | "never";

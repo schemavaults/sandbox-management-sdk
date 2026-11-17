@@ -1,0 +1,5 @@
+# Only the crate's manifest, lockfile and sources are needed to build the proxy.
+*
+!Cargo.toml
+!Cargo.lock
+!src/

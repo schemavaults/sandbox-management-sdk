@@ -1,3 +1,0 @@
-# Only src/ is needed to build the proxy bundle.
-*
-!src/

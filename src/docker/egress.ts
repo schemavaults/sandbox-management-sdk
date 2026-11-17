@@ -2,7 +2,6 @@ import { SandboxError } from "../errors.js";
 import { assertNetworkPolicySupported, networkPolicyKind } from "../network.js";
 import type { SandboxProvider } from "../provider.js";
 import type { SandboxNetworkAllowlist, SandboxSpec } from "../types.js";
-import type { EgressProxyConfig } from "./egress-proxy/config.js";
 
 /**
  * The egress proxy image published with this SDK version (built from
@@ -12,6 +11,29 @@ export const DOCKER_EGRESS_PROXY_IMAGE = "ghcr.io/schemavaults/sandbox-egress-pr
 
 /** Label on a sandbox's egress proxy container and internal network; the value is the sandbox ID. */
 export const DOCKER_EGRESS_PROXY_LABEL = "dev.schemavaults.sandbox.egress-proxy";
+
+/** Environment variable the proxy image reads its `EgressProxyConfig` from, as JSON. */
+export const EGRESS_PROXY_CONFIG_ENV = "SANDBOX_EGRESS_PROXY_CONFIG";
+
+/** A TCP port the proxy forwards to the sandbox, so it can be published on the host. */
+export interface EgressProxyForward {
+  port: number;
+  host: string;
+  targetPort: number;
+}
+
+/**
+ * The egress proxy's config. The proxy (`images/egress-proxy/src/config.rs`)
+ * parses and checks it; keep the two in step.
+ */
+export interface EgressProxyConfig {
+  /** Port of the HTTP proxy (plain requests and `CONNECT`). */
+  port: number;
+  policy: SandboxNetworkAllowlist;
+  /** CIDRs of the clients that may use the HTTP proxy. Loopback always may. */
+  clients: string[];
+  forwards: EgressProxyForward[];
+}
 
 /** Host names of the proxy and the sandbox on the sandbox's internal network. */
 export const EGRESS_PROXY_ALIAS = "egress-proxy";

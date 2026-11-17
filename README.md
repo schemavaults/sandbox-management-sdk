@@ -193,8 +193,8 @@ A sandbox with a `spec.network` allowlist (or `"deny-all"` and `ports`) runs beh
 - **Only HTTP and HTTPS get out.** Tools that ignore the proxy variables, git over SSH, other TCP protocols, UDP and DNS lookups all fail, because there is no route out.
 - The proxy only resolves names that could be allowed, so it cannot be used to leak data through DNS lookups. It refuses clients outside the sandbox's network and never connects to its own loopback.
 - HTTPS is checked by the host name in the `CONNECT` request, not inside the encrypted tunnel. A client could still reach another site served from the same address as an allowed host (domain fronting), where that host's CDN permits it.
-- `stop` and `wake` stop and start the proxy with the sandbox, and `destroy` removes the proxy and the network. `status` and `reconcile` report the sandbox as stopped if its proxy is not running, and the next access restarts it. `docker logs sandbox-<id>-egress` shows every allowed and refused connection.
-- The proxy image is `DOCKER_EGRESS_PROXY_IMAGE` (`ghcr.io/schemavaults/sandbox-egress-proxy:<sdk version>`), built from [`images/egress-proxy`](images/egress-proxy/Dockerfile) and published with each release. To use your own build, run `docker build -f images/egress-proxy/Dockerfile -t my-proxy .` and pass `egressProxyImage: "my-proxy"`. The provider waits for the image's `HEALTHCHECK` before starting the sandbox.
+- `stop` and `wake` stop and start the proxy with the sandbox, and `destroy` removes the proxy and the network. `status` and `reconcile` report the sandbox as stopped if its proxy is not running, and the next access restarts it. `docker logs sandbox-<id>-egress` shows every allowed and refused connection, and allowed ones that failed.
+- The proxy image is `DOCKER_EGRESS_PROXY_IMAGE` (`ghcr.io/schemavaults/sandbox-egress-proxy:<sdk version>`), a static Rust binary on an empty base image (about 2 MB), built from [`images/egress-proxy`](images/egress-proxy) and published with each release for amd64 and arm64. To use your own build, run `docker build -t my-proxy images/egress-proxy` and pass `egressProxyImage: "my-proxy"`. The provider waits for the image's `HEALTHCHECK` before starting the sandbox.
 - Each allowlisted sandbox uses one Docker network, stopped or running. Docker's default address pools hold about 30 networks; raise `default-address-pools` in `daemon.json` (for example `{ "base": "10.200.0.0/16", "size": 24 }`) to run more.
 
 ### Vercel Sandbox
@@ -274,9 +274,13 @@ bun run test:unit                                  # no external services needed
 bun run test:e2e:fixture-image && bun run test:e2e:egress-proxy-image && bun run test:e2e:docker    # needs a Docker daemon
 bun run test:e2e:dbh                                         # needs Postgres (POSTGRES_* env vars)
 node ./tests/smoke/node-smoke.mjs                            # built package under Node (after build)
+
+cd images/egress-proxy && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test    # the egress proxy (Rust)
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, the unit tests and a Node 24 smoke test. It also builds the egress proxy image and runs the Docker e2e suite against the runner's Docker daemon, including allowlists enforced end to end, and the store suite against a Postgres service container. The Vercel adapter is tested against a fake `@vercel/sandbox` client, with no live API calls.
+The egress proxy is a Rust crate in `images/egress-proxy`; `rust-toolchain.toml` there pins its toolchain, which rustup installs on first use. Its config (`EgressProxyConfig` in `src/docker/egress.ts`) is checked again by the proxy in `src/config.rs`, with the SDK's messages: keep the two in step.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, the unit tests and a Node 24 smoke test, and rustfmt, clippy and the tests of the egress proxy. It also builds the egress proxy image and runs the Docker e2e suite against the runner's Docker daemon, including allowlists enforced end to end, and the store suite against a Postgres service container. The Vercel adapter is tested against a fake `@vercel/sandbox` client, with no live API calls.
 
 ### Website
 

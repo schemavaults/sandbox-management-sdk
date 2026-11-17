@@ -93,12 +93,6 @@ export function parseCidr(value: string): CidrRange | null {
   return { version: ip.version, prefix: length, network: ip.value >> BigInt(bits - length) };
 }
 
-/** Whether `range` contains `ip`. Addresses of the other IP version are never contained. */
-export function cidrContains(range: CidrRange, ip: IpAddress): boolean {
-  const bits = range.version === 4 ? 32 : 128;
-  return range.version === ip.version && ip.value >> BigInt(bits - range.prefix) === range.network;
-}
-
 /** Parses a plain IPv4 or IPv6 address (no zone ID), or returns `null`. */
 export function parseIp(address: string): IpAddress | null {
   const v4 = parseIPv4(address);
